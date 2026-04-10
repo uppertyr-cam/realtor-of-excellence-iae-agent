@@ -1,0 +1,361 @@
+// ============================================================
+// WORKFLOW 01 — Send to AI · Get Response
+// Instant Appointment Engine — 01
+//
+// Entry: POST /webhook/inbound  (WhatsApp or SMS reply)
+// Handles: debounce → data capture → route → generate AI reply
+// ============================================================
+
+import { db } from '../db/client'
+import { getClientConfig } from '../config/client-config'
+import { generateAIResponse } from '../ai/generate'
+import { writeToCrm } from '../crm/adapter'
+import { logger } from '../utils/logger'
+
+const DEBOUNCE_MS = 5_000
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+// ─── ENTRY POINT ─────────────────────────────────────────────
+// Called when an inbound WhatsApp or SMS message arrives
+export async function handleInboundMessage(params: {
+  contact_id: string
+  message: string
+  channel: 'whatsapp' | 'sms'
+  phone_number: string
+}) {
+  logger.info('Workflow 01 triggered — inbound message', {
+    contact_id: params.contact_id, channel: params.channel,
+  })
+
+  // ── Step 1: Store message in buffer ──────────────────────
+  await db.query(
+    `INSERT INTO message_buffer (contact_id, message, channel, received_at)
+     VALUES ($1, $2, $3, NOW())`,
+    [params.contact_id, params.message, params.channel]
+  )
+
+  // ── Step 2: Debounce — cancel existing timer if any ──────
+  const existing = debounceTimers.get(params.contact_id)
+  if (existing) clearTimeout(existing)
+
+  // Set new timer — only the last message's timer will fire
+  const timer = setTimeout(async () => {
+    debounceTimers.delete(params.contact_id)
+    await processBufferedMessages(params.contact_id, params.channel)
+  }, DEBOUNCE_MS)
+
+  debounceTimers.set(params.contact_id, timer)
+}
+
+// ─── PROCESS BUFFERED MESSAGES ───────────────────────────────
+async function processBufferedMessages(contactId: string, channel: string) {
+  // ── Step 3: Acquire DB lock ───────────────────────────────
+  const locked = await db.acquireLock(contactId)
+  if (!locked) {
+    logger.warn('Could not acquire lock — another process is handling this contact', { contactId })
+    return
+  }
+
+  try {
+    // ── Step 4: Collect + concatenate all buffered messages ─
+    const bufferRes = await db.query(
+      `SELECT message FROM message_buffer
+       WHERE contact_id=$1
+       ORDER BY received_at ASC`,
+      [contactId]
+    )
+
+    if (bufferRes.rowCount === 0) return
+
+    const combinedMessage = bufferRes.rows.map((r) => r.message).join('\n')
+
+    // Clear buffer
+    await db.query(`DELETE FROM message_buffer WHERE contact_id=$1`, [contactId])
+
+    // Cancel any pending bumps and reach_back_out — lead has replied
+    await db.query(
+      `UPDATE outbound_queue SET status='cancelled'
+       WHERE contact_id=$1 AND status='pending'
+       AND message_type IN ('bump','bump_close','reach_back_out')`,
+      [contactId]
+    )
+
+    // ── Step 5: Load contact + client config ─────────────────
+    const contactRes = await db.query(`SELECT * FROM contacts WHERE id=$1`, [contactId])
+    if (contactRes.rowCount === 0) {
+      logger.error('Contact not found', { contactId })
+      return
+    }
+    const contact = contactRes.rows[0]
+    const config = await getClientConfig(contact.client_id)
+
+    // ── Step 6: Clear trigger field + add reply generating tag
+    await db.query(
+      `UPDATE contacts SET
+         tags=array_append(tags,'reply_generating'),
+         last_reply_at=NOW(),
+         lead_response=$1,
+         updated_at=NOW()
+       WHERE id=$2`,
+      [combinedMessage, contactId]
+    )
+
+    // ── Step 7: Update AI memory with inbound message ────────
+    const newMemory = [
+      contact.ai_memory || '',
+      `\nLEAD: ${combinedMessage}`,
+    ].join('')
+
+    await db.query(`UPDATE contacts SET ai_memory=$1 WHERE id=$2`, [newMemory, contactId])
+
+    // ── Step 8: Add note to CRM ──────────────────────────────
+    await writeToCrm(
+      {
+        contact_id: contactId,
+        note: `IAE: Lead replied via ${channel}.\n\nMessage: ${combinedMessage}\n\nTimestamp: ${new Date().toISOString()}`,
+        fields: { lead_response: combinedMessage },
+      },
+      config,
+      contact.crm_callback_url
+    )
+
+    // ── Step 9: Log to message_log ───────────────────────────
+    await db.query(
+      `INSERT INTO message_log (contact_id, client_id, direction, channel, content)
+       VALUES ($1,$2,'inbound',$3,$4)`,
+      [contactId, config.id, channel, combinedMessage]
+    )
+
+    // ── Step 10: Loop counter + reset logic ──────────────────
+    const hoursSinceLastReply = contact.last_reply_at
+      ? (Date.now() - new Date(contact.last_reply_at).getTime()) / 3_600_000
+      : 999
+
+    let loopCounter = contact.loop_counter + 1
+    const resetHours = config.loop_counter_reset_hours
+    if (resetHours !== null && resetHours !== undefined && hoursSinceLastReply > resetHours) {
+      loopCounter = 1
+      logger.info('Loop counter reset — inactivity gap exceeded client threshold', { contactId, resetHours })
+    }
+
+    await db.query(
+      `UPDATE contacts SET loop_counter=$1, loop_counter_reset_at=CASE WHEN $2 THEN NOW() ELSE loop_counter_reset_at END WHERE id=$3`,
+      [loopCounter, hoursSinceLastReply > 24, contactId]
+    )
+
+    // ── Step 11: Populate prompt fields ──────────────────────
+    const leadData: Record<string, string> = {
+      first_name:        contact.first_name || '',
+      last_name:         contact.last_name || '',
+      phone_number:      contact.phone_number,
+      first_message:     contact.first_message_sent || '',
+      conversation_history: newMemory,
+      client_name:       config.name,
+    }
+
+    // ── Step 12: Route based on stage ────────────────────────
+    await routeContact(contact, config, combinedMessage, leadData, loopCounter, newMemory)
+
+  } finally {
+    await db.releaseLock(contactId)
+  }
+}
+
+// ─── ROUTING LOGIC ───────────────────────────────────────────
+async function routeContact(
+  contact: any,
+  config: any,
+  message: string,
+  leadData: Record<string, string>,
+  loopCounter: number,
+  chatHistory: string
+) {
+  const tags: string[] = contact.tags || []
+  const contactId = contact.id
+
+  // 3.0 — First message tag
+  if (tags.includes('first_message_sent') && !tags.includes('second_message')) {
+    logger.info('Route: first message → second message', { contactId })
+    await swapTag(contactId, 'first_message_sent', 'second_message')
+    await triggerAIGeneration(contact, config, message, leadData, chatHistory)
+    return
+  }
+
+  // 4.0 — Second message tag
+  if (tags.includes('second_message') && !tags.includes('multiple_messages')) {
+    logger.info('Route: second message → multiple messages', { contactId })
+    await swapTag(contactId, 'second_message', 'multiple_messages')
+    await triggerAIGeneration(contact, config, message, leadData, chatHistory)
+    return
+  }
+
+  // 5.0 — Manual takeover
+  if (tags.includes('manual_takeover')) {
+    logger.info('Route: manual takeover', { contactId })
+    await removeTag(contactId, 'reply_generating')
+    await notifyAgent(contact, config, message)
+    await writeToCrm(
+      { contact_id: contactId, fields: { trigger_field: 'manual_takeover_notification' } },
+      config, contact.crm_callback_url
+    )
+    return
+  }
+
+  // 7.0 — Loop counter locked
+  if (loopCounter > config.loop_counter_max) {
+    logger.info('Route: loop counter exceeded', { contactId, loopCounter })
+    await removeTag(contactId, 'reply_generating')
+    return
+  }
+
+  // 8.0 — Default → AI generation
+  logger.info('Route: none matched → AI generation', { contactId })
+  await sleep(500) // brief hold
+  await triggerAIGeneration(contact, config, message, leadData, chatHistory)
+}
+
+// ─── AI GENERATION ───────────────────────────────────────────
+async function triggerAIGeneration(
+  contact: any,
+  config: any,
+  latestMessage: string,
+  leadData: Record<string, string>,
+  chatHistory: string
+) {
+  const contactId = contact.id
+
+  try {
+    const { text: responseText, keyword, scheduledAt } = await generateAIResponse({
+      promptFilePath:  config.prompt_file_path,
+      chatHistory,
+      leadData,
+      latestMessage,
+      clientName: config.name,
+    })
+
+    // Store AI response for Workflow 02 to send
+    await db.query(
+      `INSERT INTO ai_responses (contact_id, client_id, response_text, channel, status)
+       VALUES ($1,$2,$3,$4,'pending')`,
+      [contactId, config.id, responseText, contact.channel || config.channel]
+    )
+
+    // Update AI memory with the response
+    const updatedMemory = chatHistory + `\nAI: ${responseText}`
+    await db.query(
+      `UPDATE contacts SET ai_memory=$1, workflow_stage='active' WHERE id=$2`,
+      [updatedMemory, contactId]
+    )
+
+    logger.info('AI response stored — triggering Workflow 02', { contactId, keyword })
+
+    // Trigger Workflow 02 inline
+    const { handleAIResponseReady } = await import('./workflow-02')
+    await handleAIResponseReady(contactId, keyword, scheduledAt)
+
+  } catch (err: any) {
+    logger.error('AI generation failed', { contactId, error: err.message })
+    await removeTag(contactId, 'reply_generating')
+    await db.query(
+      `UPDATE contacts SET tags=array_append(tags,'ai_failed') WHERE id=$1`,
+      [contactId]
+    )
+    await notifyAgent(contact, config, `AI generation failed: ${err.message}`)
+    await writeToCrm(
+      { contact_id: contactId, tags_add: ['ai_failed'], note: `IAE: AI generation failed — ${err.message}` },
+      config, contact.crm_callback_url
+    )
+  }
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────
+async function swapTag(contactId: string, remove: string, add: string) {
+  await db.query(
+    `UPDATE contacts SET
+       tags = array_append(array_remove(tags,$1),$2)
+     WHERE id=$3`,
+    [remove, add, contactId]
+  )
+}
+
+async function removeTag(contactId: string, tag: string) {
+  await db.query(
+    `UPDATE contacts SET tags=array_remove(tags,$1) WHERE id=$2`,
+    [tag, contactId]
+  )
+}
+
+/**
+ * Send a notification to the agent via the specified channel
+ * Used for voice note failures and manual takeovers
+ */
+async function sendNotification(
+  channel: string,
+  target: string,
+  message: string,
+  config: any
+): Promise<void> {
+  const { sendWhatsAppMessage } = await import('../channels/whatsapp')
+  const { sendSmsMessage } = await import('../channels/sms')
+
+  try {
+    if (channel === 'whatsapp') {
+      await sendWhatsAppMessage(target, message, config.wa_phone_number_id!, config.wa_access_token!)
+      logger.info('Agent notification sent via WhatsApp', { target })
+    } else if (channel === 'sms') {
+      await sendSmsMessage(target, message, config.sms_account_sid!, config.sms_auth_token!, config.sms_from_number!)
+      logger.info('Agent notification sent via SMS', { target })
+    } else if (channel === 'email') {
+      // TODO: Implement email via nodemailer or similar
+      logger.warn('Email notifications not yet implemented', { target, message })
+    } else {
+      logger.warn('Unknown notification channel', { channel, target })
+    }
+  } catch (err: any) {
+    logger.error('Failed to send agent notification', { channel, target, error: err.message })
+  }
+}
+
+/**
+ * Route agent notification based on contact's workflow stage and tags
+ * Priority: interested_in_purchasing > already_purchased > renting > senior_team_member > manual_takeover > default
+ */
+export async function notifyStageAgent(contact: any, config: any, message: string): Promise<void> {
+  const stageAgents = config.stage_agents || {}
+
+  // Tag priority order for routing
+  const TAG_PRIORITY = [
+    'interested_in_purchasing',
+    'already_purchased',
+    'renting',
+    'senior_team_member',
+    'manual_takeover',
+  ]
+
+  // Find the highest-priority matching tag
+  const matchedTag = TAG_PRIORITY.find((tag) => contact.tags?.includes(tag))
+  const agentConfig = stageAgents[matchedTag ?? 'default'] ?? stageAgents['default']
+
+  if (!agentConfig?.target) {
+    // Fall back to legacy single notification_target
+    await notifyAgent(contact, config, message)
+    return
+  }
+
+  logger.info('Routing notification to stage agent', {
+    contact_id: contact.id,
+    matched_tag: matchedTag ?? 'default',
+    channel: agentConfig.channel,
+  })
+
+  await sendNotification(agentConfig.channel, agentConfig.target, message, config)
+}
+
+async function notifyAgent(contact: any, config: any, message: string) {
+  // Use stage-based routing if available, otherwise use legacy notification_target
+  await notifyStageAgent(contact, config, message)
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}

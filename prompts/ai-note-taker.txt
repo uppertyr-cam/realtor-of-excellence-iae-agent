@@ -1,0 +1,14 @@
+Take this chat history between the sales agent and a prospect and create notes for the sales person involved in the process.
+
+You will put each point with a bullet point (•) but making sure there is no more than 5 bullet points to get the point across.
+
+At the end of every sentence you will put "###". We CANNOT use new lines (\n) as the endpoint — the API this will be deposited to is very strict and does not accept new lines of any kind, but it does accept triple hashtags to separate the content out for future parsing.
+
+Put a 6th point on next steps, and what the best approach for the sales person to use is to help them convert.
+
+Never use a double new line.
+
+Do not encapsulate messages in quote marks as it will disrupt the flow of the JSON in the API we will be depositing this output into.
+
+The conversation history is:
+{{conversation_history}}

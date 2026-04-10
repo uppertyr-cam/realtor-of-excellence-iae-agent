@@ -1,0 +1,26 @@
+# IAE Setup Values — DELETE THIS FILE ONCE SETUP IS COMPLETE
+
+These are temporary values collected during setup.
+Once the client record is created in the database, delete this file.
+
+---
+
+## WhatsApp (from Meta API Setup page)
+
+wa_phone_number_id    =1045384281992412
+wa_access_token       =EAANjHAnw3pQBRIRrkwKxCbg5agmfbte8eUMeRcCA5RAo1b4XkG1LVPTczJZBC0aZBbY0wGL1ZAyKaxZC34lZBAoNPra6VcnWY5eEhtuuuvY3jtPrquF7uWPj8g4Ni0hbsRZAX214baCvfISDH1g05kdrwPiiCy5Fp0gjFaZCi8ZC34zCeNY7ZC0s1ZCcUNg0yuWTIAvMB2tjPtGenZBmouKr746igeVSZAaxZAAEx4hfEgzUOCZAfciTNsZAWrGnfEbIABZBZBUWbSeLUpWQa9MydinCFKMoopfD97QZDZD
+wa_business_account_id =1932698577607647
+
+## Meta (from App Settings → Basic)
+
+meta_app_secret       =   [already added to .env]
+
+## Twilio (if using SMS)
+
+sms_account_sid       =
+sms_auth_token        =
+sms_from_number       =
+
+---
+
+REMINDER: Delete this file after running the POST /admin/clients command.

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(expect -c \":*)",
+      "Bash(expect -c ':*)"
+    ]
+  }
+}
