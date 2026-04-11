@@ -112,11 +112,16 @@ ${params.latestMessage}
         ),
       ])
 
-      const text = response.content
+      const rawText = response.content
         .filter((b) => b.type === 'text')
         .map((b) => (b as any).text)
         .join('')
         .trim()
+
+      // Extract only the content inside <message> tags — strips any reasoning Claude
+      // writes before the actual reply. Falls back to raw text if no tags present.
+      const tagMatch = rawText.match(/<message>([\s\S]*?)<\/message>/)
+      const text = tagMatch ? tagMatch[1].trim() : rawText
 
       // Extract routing outcome from tool call if Claude signalled one
       const toolUse = response.content.find(

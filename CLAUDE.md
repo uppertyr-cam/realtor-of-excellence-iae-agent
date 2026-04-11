@@ -6,6 +6,17 @@ Entry point: `src/index.ts`
 
 ---
 
+## Codex Workflow Rules
+
+- Claude Code plans; Codex implements
+- For any task involving file edits: delegate to Codex via `codex:rescue --write`
+- For reasoning, planning, doc updates, reviews: Claude handles directly
+- Always give Codex a precise brief: file path, function name, exact behaviour expected
+- After Codex completes: Claude reviews the diff and runs `npx tsc --noEmit` to verify
+- Codex runs on the user's ChatGPT subscription — not Anthropic usage
+
+---
+
 ## Security Rules
 
 - Never display, repeat, or reference actual values from `.env` in chat — not API keys, secrets, tokens, database URLs, or any credentials
@@ -17,10 +28,14 @@ Entry point: `src/index.ts`
 
 - If asked to do something repetitive or that required explicit instruction, update CLAUDE.md (or the relevant doc in `docs/`) immediately so it applies automatically in future sessions
 - Keep docs up to date as the project evolves — if a file path, function name, or behaviour changes, update the reference doc that mentions it
+- **Never overwrite docs without asking** — do not rewrite or restructure `docs/` files or CLAUDE.md without explicit instruction. Additive updates (appending, correcting a line) are fine; rewrites require confirmation.
+- **Document failures immediately** — when something breaks and is fixed, follow this loop: identify what broke → fix it → verify the fix works → update the relevant doc in `docs/` → move on. Do not leave the doc reflecting the broken state.
+- Keep `docs/platforms-and-services.md` up to date — whenever a new external platform, service, or infrastructure tool is added or removed, update this file immediately
 - After reading and using a screenshot, immediately delete it — both from `screenshots/` locally and from the VPS `screenshots` folder if applicable
 - VPS credentials are stored in `.env` under `VPS_IP`, `VPS_USER`, `VPS_PASSWORD`, `VPS_APP_DIR` — check there first, never ask the user to repeat them
 - Pending tasks between sessions are tracked in `to-do-list/`
 - Any time the user mentions something to do at a later stage, immediately add it to `to-do-list/` — never leave it just in chat
+- One-off debug or test scripts go in `.tmp/` at the project root (gitignored). Delete them immediately after the task is complete — do not leave them scattered in the root.
 
 ---
 
@@ -46,6 +61,30 @@ Entry point: `src/index.ts`
 
 ---
 
+## Step 3.0 Qualification Routing (Apr 2026 Fix)
+
+**Status:** ✅ Fixed and verified
+
+When a lead completes all qualifying questions (step 2.7), step 3.0 must:
+1. Send the exact closing message: `"I appreciate you sharing that. I'll forward your details to the Realtor of Excellence specialist who covers your area, and they'll reach out shortly with properties that match your criteria. Have a wonderful day."`
+2. Call `route_lead(action='interested_in_purchasing')` (via Claude tool)
+3. Update tags: remove `qualifying_questions`, add `interested_in_purchasing`, `manual_takeover`, `qualified`
+4. Cancel all pending bumps via `cancelPendingBumps(contactId)`
+
+**Layered Defense (prevents tool skips):**
+- **Layer 1:** Prompt (`prompts/conversation.txt` step 3.0) requires exact template and mandatory tool call
+- **Layer 2:** Text-scan fallback (`detectKeyword()`) detects `"i'll forward your details"` phrase in closing message
+- **Layer 3:** Tag updates use `ARRAY(SELECT DISTINCT UNNEST(...))` to prevent duplicates and ensure clean state
+
+**Implementation:**
+- `prompts/conversation.txt`: Step 3.0 block specifies exact closing message template
+- `src/workflows/workflow-02.ts`: 
+  - `detectKeyword()` includes fallback phrases: `"i'll forward your details"`, `"forward your details to the realtor"`
+  - `handleKeyword()` `interested_in_purchasing` case: separate `array_remove` + `DISTINCT UNNEST` merge to add tags without duplicates
+  - Always calls `cancelPendingBumps(contactId)` and `writeContactNote()`
+
+---
+
 ## Error Handling Invariants
 
 - Every send: 3 retries with exponential backoff (1s → 2s → 4s)
@@ -59,9 +98,27 @@ Entry point: `src/index.ts`
 
 ## Session Efficiency Rules
 
-- **Trust the reference docs** — `docs/workflows.md`, `docs/database.md`, `docs/api-endpoints.md`, `docs/configuration.md`, `docs/common-tasks.md` are authoritative. Do not re-read source files to verify what these docs already describe.
+- **Trust the reference docs** — `docs/workflows.md`, `docs/database.md`, `docs/common-tasks.md` are authoritative. Do not re-read source files to verify what these docs already describe.
 - **Use Grep over Read** — when looking for a specific function, variable, or string, use Grep with a pattern rather than reading the whole file.
 - **Read with line ranges** — when a full file read is unavoidable, use offset+limit to read only the relevant section.
+- **Check before creating** — before writing any new function, helper, or script, search `src/` for existing implementations. Use Grep to find similar patterns first. Reuse existing code when possible.
+
+---
+
+## Verification Rules
+
+- After making changes, run the smallest useful verification command available
+- Prefer targeted tests over broad test runs when the task is narrow
+- If no test exists, verify via typecheck or lint (`npm run typecheck` / `npm run lint`)
+- If verification cannot be run, say so clearly — do not claim a fix is verified unless a real check was run
+
+---
+
+## Git Rules
+
+- Do not stage or commit files unless explicitly asked
+- Do not revert unrelated changes
+- If unexpected changes conflict with the current task, surface the conflict instead of overwriting
 
 ---
 

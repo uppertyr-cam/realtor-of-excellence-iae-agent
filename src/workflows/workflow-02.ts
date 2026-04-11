@@ -69,6 +69,12 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
     return
   }
 
+  // ── Step 3b: Clear stale send_failed tag (cleanup from earlier failed attempts) ──
+  await db.query(
+    `UPDATE contacts SET tags=array_remove(tags,'send_failed') WHERE id=$1`,
+    [contactId]
+  )
+
   // ── Step 4: Update AI memory with sent message ────────────
   const updatedMemory = (contact.ai_memory || '') + `\nAI: ${responseText}`
   await db.query(`UPDATE contacts SET ai_memory=$1 WHERE id=$2`, [updatedMemory, contactId])
@@ -113,6 +119,18 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
      VALUES ($1,$2,'outbound',$3,$4,'ai_reply')`,
     [contactId, config.id, channel, responseText]
   )
+
+  // ── Add "qualifying_questions" tag if starting qualification ──
+  const startsQualifying = responseText.toLowerCase().includes('which area') ||
+    responseText.toLowerCase().includes('what type of property') ||
+    responseText.toLowerCase().includes('price range') ||
+    responseText.toLowerCase().includes('how many bedrooms')
+  if (startsQualifying && !contact.tags.includes('qualifying_questions')) {
+    await db.query(
+      `UPDATE contacts SET tags=array_append(tags,'qualifying_questions') WHERE id=$1`,
+      [contactId]
+    )
+  }
 
   // ── Step 6: Keyword detection ─────────────────────────────
   // Prefer the tool-signalled keyword from Claude; fall back to text scanning as a safety net
@@ -166,7 +184,9 @@ function detectKeyword(text: string): DetectedKeyword {
       lower.includes('more senior'))                 return 'senior_team_member'
   if (lower.includes('interested in purchasing') ||
       lower.includes('want to purchase') ||
-      lower.includes('looking to buy'))              return 'interested_in_purchasing'
+      lower.includes('looking to buy') ||
+      lower.includes("i'll forward your details") ||
+      lower.includes('forward your details to the realtor'))  return 'interested_in_purchasing'
   if (lower.includes('already purchased') ||
       lower.includes('already bought'))              return 'already_purchased'
   return 'none'
@@ -251,13 +271,22 @@ async function handleKeyword(
       break
 
     case 'interested_in_purchasing':
-      await db.query(`UPDATE contacts SET tags=array_append(array_append(tags,'interested_in_purchasing'),'manual_takeover') WHERE id=$1`, [contactId])
+      // Remove qualifying_questions, add interested_in_purchasing, manual_takeover, qualified (prevent duplicates)
+      await db.query(
+        `UPDATE contacts SET tags=array_remove(tags,'qualifying_questions') WHERE id=$1`,
+        [contactId]
+      )
+      await db.query(
+        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover', 'qualified'])) WHERE id=$1`,
+        [contactId]
+      )
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['interested-in-purchasing', 'manual-takeover'],
+        tags_add: ['interested-in-purchasing', 'manual-takeover', 'qualified'],
         note: `IAE: Lead is interested in purchasing.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Interested in Purchasing' } : undefined,
       }, config, contact.crm_callback_url)
+      await cancelPendingBumps(contactId)
       writeContactNote(contact, config, chatHistory, 'Interested in Purchasing').catch(() => {})
       break
 
@@ -311,6 +340,7 @@ async function writeContactNote(contact: any, config: any, chatHistory: string, 
 
 // ─── HELPERS ─────────────────────────────────────────────────
 async function sendMessage(contact: any, config: any, text: string, channel: string): Promise<SendResult> {
+  text = text.replace(/[\u2013\u2014]/g, ' - ').replace(/[\u0430]/g, 'a').replace(/[^\x00-\x7F]/g, '')
   if (channel === 'whatsapp') {
     return sendWhatsAppMessage(contact.phone_number, text, config.wa_phone_number_id, config.wa_access_token)
   }

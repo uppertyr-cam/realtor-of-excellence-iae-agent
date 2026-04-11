@@ -99,7 +99,9 @@ async function writeFollowUpBoss(update: CrmUpdate, config: ClientConfig) {
   if (update.tags_add?.length || (update.fields && Object.keys(update.fields).length > 0)) {
     const current = await axios.get(`${base}/people/${update.contact_id}`, { auth })
     const existingTags: string[] = current.data.tags || []
-    const mergedTags = [...new Set([...existingTags, ...(update.tags_add || [])])]
+    const mergedTags = [...new Set([...existingTags, ...(update.tags_add || [])])].filter(
+      (tag) => !(update.tags_remove || []).includes(tag),
+    )
     await axios.put(`${base}/people/${update.contact_id}`, {
       ...(update.fields || {}),
       tags: mergedTags,

@@ -3,4 +3,6 @@ dist/
 .env
 .DS_Store
 screenshots/
+.tmp/
 *.sh
+plans/

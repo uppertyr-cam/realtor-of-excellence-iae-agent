@@ -20,6 +20,19 @@ Edit `prompts/conversation.txt` directly. Changes are live immediately — no re
 ## Add a new notification channel for manual takeover
 Edit the `notifyAgent()` function in `src/workflows/workflow-01.ts`.
 
+## Manage contact tags and qualification flow
+
+Contacts progress through qualification with automatic tag tracking:
+
+| Stage | Tags Added | Tags Removed | Bumps |
+|-------|-----------|--------------|-------|
+| Start | `database_reactivation` | — | drip queue |
+| First message sent | `first_message_sent` | — | 7/14/21 day follow-ups + bumps |
+| Qualification starts (step 2.0) | `qualifying_questions` | — | keep bumps running |
+| Qualification complete (step 3.0) | `interested_in_purchasing`, `manual_takeover`, `qualified` | `qualifying_questions` | **cancel all bumps** |
+
+**Important:** When a lead qualifies (completes step 3.0), `cancelPendingBumps()` is called to clear the 24h/48h/72h bump schedule. Do not manually queue bumps for `qualified` leads.
+
 ## Test a full flow
 
 1. Start the server: `npm run dev`

@@ -33,6 +33,23 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
 
 ---
 
+## Code Side — Agent Q&A Relay with Prompt Learning
+
+When a lead asks a question Cameron can't answer, instead of deflecting, relay it to the agent:
+
+1. New Claude tool `ask_agent` — AI calls this instead of routing to senior_team_member
+2. System pauses lead conversation, tags `awaiting_agent_answer`, stores the question
+3. Agent receives notification with the question via WhatsApp to business number
+4. Agent replies → system forwards answer to lead, removes await tag
+5. Agent replies "APPROVE" → system appends Q&A to `prompts/conversation.txt` FAQ section
+6. Next time someone asks that question, AI answers from FAQ without calling `ask_agent`
+
+**Files to modify:** `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/workflow-01.ts`, `src/workflows/workflow-02.ts`, `prompts/conversation.txt`, `src/utils/types.ts`
+
+See full plan at `/Users/phone121212/.claude/plans/curried-scribbling-diffie.md`
+
+---
+
 ## Your Side — Permanent WhatsApp API Token
 
 The current `wa_access_token` on the `realtor_of_excellence` client is a 24-hour test token. To get a permanent one:

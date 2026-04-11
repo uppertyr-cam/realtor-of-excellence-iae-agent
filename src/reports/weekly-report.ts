@@ -41,7 +41,7 @@ function formatNotes(rawNotes: string): string {
 }
 
 const REPORT_EMAIL = 'cameronbritt111@gmail.com'
-const FROM_EMAIL = 'cameron@hyperzenai.com'
+const FROM_EMAIL = 'cameronbritt111@gmail.com'
 const APP_PASSWORD = 'lpvzbitjpojvlltd'
 
 const OUTCOMES = ['Not Interested', 'Interested in Renting', 'Interested in Buying', 'Already Purchased', 'No Reply']
@@ -442,7 +442,7 @@ export async function sendWeeklyReport() {
               <tr>
                 <td style="padding:3px 0;color:#00e5ff;font-family:'Courier New',monospace;font-size:12px;">✉️</td>
                 <td style="padding:3px 0 3px 8px;font-family:Arial,sans-serif;font-size:12px;">
-                  <a href="mailto:cameron@hyperzenai.com" style="color:#00e5ff;text-decoration:none;">cameron@hyperzenai.com</a>
+                  <a href="mailto:cameronbritt111@gmail.com" style="color:#00e5ff;text-decoration:none;">cameronbritt111@gmail.com</a>
                 </td>
               </tr>
               <tr>

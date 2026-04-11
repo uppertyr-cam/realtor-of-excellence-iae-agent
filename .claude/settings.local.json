@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(expect -c \":*)",
-      "Bash(expect -c ':*)"
+      "Bash(expect -c ':*)",
+      "Read(//Users/phone121212/**)",
+      "Bash(echo 'export PATH=\"$HOME/.local/bin:$PATH\"')",
+      "Bash(npx tsc:*)",
+      "WebSearch",
+      "Bash(psql $DB_URL:*)",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(sshpass:*)",
+      "Bash(ssh:*)",
+      "Bash(brew install:*)",
+      "Skill(codex:rescue)"
     ]
   }
 }
