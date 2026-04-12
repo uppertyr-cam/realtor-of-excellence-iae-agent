@@ -10,7 +10,8 @@ Entry point: `src/index.ts`
 
 - Claude Code plans; Codex implements
 - For any task involving file edits: delegate to Codex via `codex:rescue --write`
-- For reasoning, planning, doc updates, reviews: Claude handles directly
+- For reasoning, planning, reviews: Claude handles directly
+- For doc updates: large writes (new files, major rewrites) → Codex; small targeted edits (a few lines, table rows) → Claude directly
 - Always give Codex a precise brief: file path, function name, exact behaviour expected
 - After Codex completes: Claude reviews the diff and runs `npx tsc --noEmit` to verify
 - Codex runs on the user's ChatGPT subscription — not Anthropic usage
@@ -61,30 +62,6 @@ Entry point: `src/index.ts`
 
 ---
 
-## Step 3.0 Qualification Routing (Apr 2026 Fix)
-
-**Status:** ✅ Fixed and verified
-
-When a lead completes all qualifying questions (step 2.7), step 3.0 must:
-1. Send the exact closing message: `"I appreciate you sharing that. I'll forward your details to the Realtor of Excellence specialist who covers your area, and they'll reach out shortly with properties that match your criteria. Have a wonderful day."`
-2. Call `route_lead(action='interested_in_purchasing')` (via Claude tool)
-3. Update tags: remove `qualifying_questions`, add `interested_in_purchasing`, `manual_takeover`, `qualified`
-4. Cancel all pending bumps via `cancelPendingBumps(contactId)`
-
-**Layered Defense (prevents tool skips):**
-- **Layer 1:** Prompt (`prompts/conversation.txt` step 3.0) requires exact template and mandatory tool call
-- **Layer 2:** Text-scan fallback (`detectKeyword()`) detects `"i'll forward your details"` phrase in closing message
-- **Layer 3:** Tag updates use `ARRAY(SELECT DISTINCT UNNEST(...))` to prevent duplicates and ensure clean state
-
-**Implementation:**
-- `prompts/conversation.txt`: Step 3.0 block specifies exact closing message template
-- `src/workflows/workflow-02.ts`: 
-  - `detectKeyword()` includes fallback phrases: `"i'll forward your details"`, `"forward your details to the realtor"`
-  - `handleKeyword()` `interested_in_purchasing` case: separate `array_remove` + `DISTINCT UNNEST` merge to add tags without duplicates
-  - Always calls `cancelPendingBumps(contactId)` and `writeContactNote()`
-
----
-
 ## Error Handling Invariants
 
 - Every send: 3 retries with exponential backoff (1s → 2s → 4s)
@@ -98,7 +75,7 @@ When a lead completes all qualifying questions (step 2.7), step 3.0 must:
 
 ## Session Efficiency Rules
 
-- **Trust the reference docs** — `docs/workflows.md`, `docs/database.md`, `docs/common-tasks.md` are authoritative. Do not re-read source files to verify what these docs already describe.
+- **Trust the reference docs** — `SCHEMA.md`, `WORKFLOWS.md`, `DECISIONS.md`, `docs/common-tasks.md` are authoritative. Do not re-read source files to verify what these docs already describe.
 - **Use Grep over Read** — when looking for a specific function, variable, or string, use Grep with a pattern rather than reading the whole file.
 - **Read with line ranges** — when a full file read is unavoidable, use offset+limit to read only the relevant section.
 - **Check before creating** — before writing any new function, helper, or script, search `src/` for existing implementations. Use Grep to find similar patterns first. Reuse existing code when possible.
@@ -141,53 +118,10 @@ When a lead completes all qualifying questions (step 2.7), step 3.0 must:
 | `VPS_USER` | Contabo VPS username | ✅ Set in .env |
 | `VPS_PASSWORD` | Contabo VPS password | ✅ Set in .env |
 | `VPS_APP_DIR` | Contabo VPS app directory | ✅ Set in .env |
-
----
-
-## Client Configuration (via DB)
-
-Per-client settings are stored in the `clients` table and configured via `POST /admin/clients`:
-
-### Voice Note Transcription
-- `openai_api_key` — OpenAI API key for Whisper transcription (required for voice notes)
-- `stage_agents` — JSONB mapping pipeline stages to notification targets, e.g.:
-  ```json
-  {
-    "default": { "channel": "whatsapp", "target": "+61412345678" },
-    "interested_in_purchasing": { "channel": "whatsapp", "target": "+61412345678" },
-    "already_purchased": { "channel": "whatsapp", "target": "+61498765432" }
-  }
-  ```
-
-### Bump Messages
-- `bump_templates` — Nested JSONB array of [group][variation] message text (9 variations total)
-- `wa_bump_template_names` — Nested JSONB array of [group][variation] approved Meta template names
-
-### Follow-Up Messages
-- `followup1_message_template`, `followup2_message_template`, `followup3_message_template` — Day 7/14/21 nudge copy
-- `wa_followup1_template_name`, `wa_followup2_template_name`, `wa_followup3_template_name` — Approved Meta template names
-
----
-
-## File Map
-
-| File | Purpose |
-|---|---|
-| `src/index.ts` | Entry point — registers all routes |
-| `src/workflows/workflow-00.ts` | CRM webhook handler — first message send, follow-up scheduling |
-| `src/workflows/workflow-01.ts` | Inbound message router — debounce, lock, AI trigger |
-| `src/workflows/workflow-02.ts` | Send AI reply — keyword detection, CRM update |
-| `src/queue/scheduler.ts` | All queue processors — drip, bumps, follow-ups, reach-back-out |
-| `src/ai/generate.ts` | Claude API call — prompt injection, tool call handling |
-| `src/channels/whatsapp.ts` | Send/validate WhatsApp messages and templates |
-| `src/channels/sms.ts` | Send SMS via Twilio |
-| `src/channels/transcription.ts` | Download WhatsApp audio + OpenAI Whisper transcription |
-| `src/crm/normalizer.ts` | Maps raw CRM payload to internal schema |
-| `src/crm/adapter.ts` | Writes tags/notes/fields back to CRM |
-| `src/config/client-config.ts` | Loads client row from DB with 5min in-memory cache |
-| `src/db/client.ts` | Postgres connection + lock acquire/release |
-| `src/db/schema.sql` | Full DB schema + idempotent migrations |
-| `src/utils/types.ts` | All TypeScript interfaces |
+| `GITHUB_PAT` | GitHub PAT for VPS deploy pulls | ✅ Set in .env |
+| `FROM_EMAIL` | Gmail address weekly report is sent from | ⚠️ Add to .env |
+| `REPORT_EMAIL` | Gmail address weekly report is sent to | ⚠️ Add to .env |
+| `GMAIL_APP_PASSWORD` | Gmail App Password for weekly report sender | ⚠️ Add to .env |
 
 ---
 
@@ -196,3 +130,7 @@ Per-client settings are stored in the `clients` table and configured via `POST /
 @docs/workflows.md
 @docs/database.md
 @docs/common-tasks.md
+@SCHEMA.md
+@WORKFLOWS.md
+@ROADMAP.md
+@DECISIONS.md

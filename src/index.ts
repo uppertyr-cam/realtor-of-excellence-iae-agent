@@ -410,11 +410,19 @@ function verifyMetaSignature(payload: string, signature: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
 }
 
-function verifyTwilioSignature(_req: express.Request): boolean {
-  // Full Twilio signature validation requires the twilio library
-  // For now we do a basic check — add full validation in production
-  // npm install twilio → use twilio.validateRequest()
-  return true // TODO: implement full Twilio signature check
+function verifyTwilioSignature(req: express.Request): boolean {
+  const authToken = process.env.TWILIO_AUTH_TOKEN || ''
+  const signature = (req.headers['x-twilio-signature'] as string) || ''
+  const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`
+  const params = (req.body as Record<string, string>) || {}
+  const stringToSign = Object.keys(params).sort().reduce((acc, k) => acc + k + params[k], url)
+  const expected = crypto.createHmac('sha1', authToken).update(Buffer.from(stringToSign, 'utf8')).digest('base64')
+  if (!signature) return false
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  } catch {
+    return false
+  }
 }
 
 function requireAdminSecret(

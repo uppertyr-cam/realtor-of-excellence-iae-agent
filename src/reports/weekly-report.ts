@@ -40,9 +40,9 @@ function formatNotes(rawNotes: string): string {
     .join('\n')
 }
 
-const REPORT_EMAIL = 'cameronbritt111@gmail.com'
-const FROM_EMAIL = 'cameronbritt111@gmail.com'
-const APP_PASSWORD = 'lpvzbitjpojvlltd'
+const REPORT_EMAIL = process.env.REPORT_EMAIL || ''
+const FROM_EMAIL   = process.env.FROM_EMAIL   || ''
+const APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || ''
 
 const OUTCOMES = ['Not Interested', 'Interested in Renting', 'Interested in Buying', 'Already Purchased', 'No Reply']
 
@@ -58,7 +58,7 @@ const OUTCOME_COLORS: Record<string, { red: number; green: number; blue: number 
 const TAG_TO_OUTCOME: Record<string, string> = {
   not_interested:        'Not Interested',
   renting:               'Interested in Renting',
-  interested_purchasing: 'Interested in Buying',
+  interested_in_purchasing: 'Interested in Buying',
   already_purchased:     'Already Purchased',
   bump_no_reply:         'No Reply',
 }
@@ -290,115 +290,6 @@ export async function buildWeeklyReport(): Promise<string> {
   }
 
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
-}
-
-// ─── BUILD EMAIL SUMMARY ─────────────────────────────────────
-async function buildEmailSummary(): Promise<string> {
-  const clientsRes = await db.query(`SELECT id, name FROM clients ORDER BY name`)
-
-  const OUTCOME_SECTIONS = [
-    { tag: 'not_interested',           label: 'Not Interested' },
-    { tag: 'renting',                  label: 'Interested in Renting' },
-    { tag: 'interested_in_purchasing', label: 'Interested in Purchasing' },
-    { tag: 'already_purchased',        label: 'Already Purchased' },
-    { tag: 'reach_back_out',           label: 'Reach Back Out' },
-    { tag: 'bump_no_reply',            label: 'Never Responded (No Reply After 3 Bumps)' },
-    { tag: 'goodbye_killswitch',       label: 'Conversation Closed (DND)' },
-  ]
-
-  let html = ''
-
-  for (const client of clientsRes.rows) {
-    const contactsRes = await db.query(
-      `SELECT first_name, last_name, phone_number, tags, ai_memory, updated_at
-       FROM contacts WHERE client_id=$1`,
-      [client.id]
-    )
-    const contacts = contactsRes.rows
-
-    html += `
-      <div style="margin-bottom:32px;">
-        <h2 style="color:#1a1a2e;border-bottom:2px solid #1a1a2e;padding-bottom:6px;margin-bottom:16px;">
-          ${client.name}
-        </h2>`
-
-    // Total summary line
-    const total = contacts.length
-    const responded = contacts.filter(c => (c.ai_memory || '').includes('LEAD:')).length
-    const closed = contacts.filter(c =>
-      (c.tags || []).some((t: string) => ['not_interested','already_purchased','goodbye_killswitch','bump_no_reply','reach_back_out'].includes(t))
-    ).length
-
-    html += `
-      <p style="color:#555;margin-bottom:20px;">
-        <strong>${total}</strong> total contacts &nbsp;|&nbsp;
-        <strong>${responded}</strong> replied &nbsp;|&nbsp;
-        <strong>${closed}</strong> reached a final outcome this week
-      </p>`
-
-    for (const section of OUTCOME_SECTIONS) {
-      const group = contacts.filter(c => (c.tags || []).includes(section.tag))
-      if (group.length === 0) continue
-
-      html += `
-        <h3 style="color:#444;margin:16px 0 8px 0;">
-          ${section.label} <span style="font-weight:normal;color:#888;">(${group.length})</span>
-        </h3>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">`
-
-      for (const c of group) {
-        const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unknown'
-        const date = c.updated_at ? new Date(c.updated_at).toLocaleDateString('en-ZA') : ''
-        // Last 2 lines of conversation as the note
-        const lines = (c.ai_memory || '').split('\n').filter((l: string) => l.trim())
-        const note = lines.slice(-2).join(' → ') || 'No conversation recorded'
-
-        html += `
-          <tr style="border-bottom:1px solid #eee;">
-            <td style="padding:8px 12px;width:180px;font-weight:bold;color:#222;">${name}</td>
-            <td style="padding:8px 12px;width:120px;color:#888;font-size:13px;">${date}</td>
-            <td style="padding:8px 12px;color:#555;font-size:13px;font-style:italic;">${note}</td>
-          </tr>`
-      }
-
-      html += `</table>`
-    }
-
-    // Active / still in conversation — no terminal tag yet but have replied
-    const active = contacts.filter(c => {
-      const tags = c.tags || []
-      const hasTerminal = OUTCOME_SECTIONS.some(s => tags.includes(s.tag))
-      return !hasTerminal && (c.ai_memory || '').includes('LEAD:')
-    })
-
-    if (active.length > 0) {
-      html += `
-        <h3 style="color:#444;margin:16px 0 8px 0;">
-          Still in Conversation <span style="font-weight:normal;color:#888;">(${active.length})</span>
-        </h3>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">`
-
-      for (const c of active) {
-        const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unknown'
-        const date = c.updated_at ? new Date(c.updated_at).toLocaleDateString('en-ZA') : ''
-        const lines = (c.ai_memory || '').split('\n').filter((l: string) => l.trim())
-        const note = lines.slice(-2).join(' → ') || 'No conversation recorded'
-
-        html += `
-          <tr style="border-bottom:1px solid #eee;">
-            <td style="padding:8px 12px;width:180px;font-weight:bold;color:#222;">${name}</td>
-            <td style="padding:8px 12px;width:120px;color:#888;font-size:13px;">${date}</td>
-            <td style="padding:8px 12px;color:#555;font-size:13px;font-style:italic;">${note}</td>
-          </tr>`
-      }
-
-      html += `</table>`
-    }
-
-    html += `</div>`
-  }
-
-  return html
 }
 
 export async function sendWeeklyReport() {
