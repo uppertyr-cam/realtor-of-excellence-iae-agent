@@ -1,9 +1,9 @@
 import 'dotenv/config'
 import express from 'express'
-import { handleCrmWebhook, forceSendContact } from './workflows/workflow-00'
+import { handleCrmWebhook, forceSendContact } from './workflows/outbound-first-message'
 import { sendWeeklyReport } from './reports/weekly-report'
 import { updateDashboard } from './reports/dashboard'
-import { handleInboundMessage } from './workflows/workflow-01'
+import { handleInboundMessage } from './workflows/inbound-reply-handler'
 import { startScheduler } from './queue/scheduler'
 import { logger } from './utils/logger'
 import crypto from 'crypto'
@@ -116,7 +116,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     // Look up contact_id by phone number in our DB (get full contact row)
     const { db } = await import('./db/client')
     const { getClientConfig } = await import('./config/client-config')
-    const { notifyStageAgent } = await import('./workflows/workflow-01')
+    const { notifyStageAgent } = await import('./workflows/inbound-reply-handler')
     const { downloadWhatsAppAudio, transcribeAudio } = await import('./channels/transcription')
 
     const contactRes = await db.query(

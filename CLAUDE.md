@@ -9,9 +9,10 @@ Entry point: `src/index.ts`
 ## Codex Workflow Rules
 
 - Claude Code plans; Codex implements
-- For any task involving file edits: delegate to Codex via `codex:rescue --write`
+- For source file edits: use judgment on size — small targeted edits (<~20 lines, single file, clear location) → Claude directly; new files, major rewrites, multi-file changes → Codex via `codex:rescue --write`
 - For reasoning, planning, reviews: Claude handles directly
 - For doc updates: large writes (new files, major rewrites) → Codex; small targeted edits (a few lines, table rows) → Claude directly
+- Rationale: Codex roundtrip (read context → write brief → review diff) costs more Claude tokens than a direct edit for small changes
 - Always give Codex a precise brief: file path, function name, exact behaviour expected
 - After Codex completes: Claude reviews the diff and runs `npx tsc --noEmit` to verify
 - Codex runs on the user's ChatGPT subscription — not Anthropic usage
@@ -37,6 +38,7 @@ Entry point: `src/index.ts`
 - Pending tasks between sessions are tracked in `to-do-list/`
 - Any time the user mentions something to do at a later stage, immediately add it to `to-do-list/` — never leave it just in chat
 - One-off debug or test scripts go in `.tmp/` at the project root (gitignored). Delete them immediately after the task is complete — do not leave them scattered in the root.
+- **Be concise** — no preamble, no greetings, no over-explanation. Get straight to the answer. Full instructions when needed, but no padding before or after.
 
 ---
 
@@ -127,10 +129,4 @@ Entry point: `src/index.ts`
 
 ## Reference Docs
 
-@docs/workflows.md
-@docs/database.md
-@docs/common-tasks.md
-@SCHEMA.md
-@WORKFLOWS.md
-@ROADMAP.md
-@DECISIONS.md
+Reference docs live in `docs/` and the project root (`SCHEMA.md`, `WORKFLOWS.md`, `ROADMAP.md`, `DECISIONS.md`). Read only what is relevant to the task at hand — do not load all docs at session start.

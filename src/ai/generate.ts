@@ -93,7 +93,8 @@ ${params.latestMessage}
       const response = await Promise.race([
         client.messages.create({
           model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
+          max_tokens: 1500,
+          thinking: { type: 'enabled', budget_tokens: 500 } as any,
           system: [
             {
               type: 'text',
@@ -105,23 +106,20 @@ ${params.latestMessage}
           tool_choice: { type: 'auto' },
           messages: [{ role: 'user', content: userMessage }],
         }, {
-          headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' },
+          headers: { 'anthropic-beta': 'interleaved-thinking-2025-05-14' },
         }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('AI generation timeout')), TIMEOUT_MS)
         ),
       ])
 
-      const rawText = response.content
+      // Extended thinking separates reasoning into 'thinking' blocks at the API level.
+      // Filtering for 'text' type already excludes thinking — no tag extraction needed.
+      const text = response.content
         .filter((b) => b.type === 'text')
         .map((b) => (b as any).text)
         .join('')
         .trim()
-
-      // Extract only the content inside <message> tags — strips any reasoning Claude
-      // writes before the actual reply. Falls back to raw text if no tags present.
-      const tagMatch = rawText.match(/<message>([\s\S]*?)<\/message>/)
-      const text = tagMatch ? tagMatch[1].trim() : rawText
 
       // Extract routing outcome from tool call if Claude signalled one
       const toolUse = response.content.find(

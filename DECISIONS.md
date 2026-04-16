@@ -12,7 +12,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** A server crash stops all processing until PM2 restarts the process. Debounce timers and rate-limit counters are in-memory and lost on restart. Horizontal scaling (multiple instances) is not possible without redesigning the lock and rate-limit systems.
 
-**Where in code:** `src/index.ts` (single Express app), `src/queue/scheduler.ts:startScheduler()` (setInterval), `src/workflows/workflow-00.ts` (`dailyCounts` and `lastSentAt` Maps)
+**Where in code:** `src/index.ts` (single Express app), `src/queue/scheduler.ts:startScheduler()` (setInterval), `src/workflows/outbound-first-message.ts` (`dailyCounts` and `lastSentAt` Maps)
 
 ---
 
@@ -36,7 +36,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** Not a true advisory lock — a crashed process leaves `processing_locked=TRUE` until the 2-minute auto-release. Lock acquire is a DB write (slightly heavier than `pg_try_advisory_lock`). If the scheduler crashes, stale locks accumulate until it restarts.
 
-**Where in code:** `src/db/client.ts:acquireLock()`, `releaseLock()`, `releaseStaleLocks()`; `src/workflows/workflow-01.ts:processBufferedMessages()` (try/finally block ensures release on error)
+**Where in code:** `src/db/client.ts:acquireLock()`, `releaseLock()`, `releaseStaleLocks()`; `src/workflows/inbound-reply-handler.ts:processBufferedMessages()` (try/finally block ensures release on error)
 
 ---
 
@@ -48,7 +48,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** Debounce state is in-memory — lost on process restart. If two Node instances ran behind a load balancer, the same contact could be processed by both. Not safe for multi-instance deployments without an external debounce layer (e.g. Redis `SET EX`).
 
-**Where in code:** `src/workflows/workflow-01.ts` — `DEBOUNCE_MS = 5_000`, `debounceTimers` Map, `handleInboundMessage()`
+**Where in code:** `src/workflows/inbound-reply-handler.ts` — `DEBOUNCE_MS = 5_000`, `debounceTimers` Map, `handleInboundMessage()`
 
 ---
 
@@ -72,7 +72,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** Two detection layers that can produce different results. If the prompt is poorly maintained, Claude may stop calling the tool reliably. The text-scan fallback may produce false positives if trigger phrases appear in non-trigger contexts (e.g. the word "renting" in a question).
 
-**Where in code:** `src/ai/generate.ts:ROUTE_LEAD_TOOL` (tool definition, 6-action enum), `src/workflows/workflow-02.ts:detectKeyword()` (text-scan), `src/workflows/workflow-02.ts:handleAIResponseReady()` — `const keyword = routedKeyword ?? detectKeyword(responseText)`
+**Where in code:** `src/ai/generate.ts:ROUTE_LEAD_TOOL` (tool definition, 6-action enum), `src/workflows/ai-send-router.ts:detectKeyword()` (text-scan), `src/workflows/ai-send-router.ts:handleAIResponseReady()` — `const keyword = routedKeyword ?? detectKeyword(responseText)`
 
 ---
 
@@ -144,7 +144,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** Reporting failures are invisible unless server logs are actively monitored. If the Google OAuth refresh token expires or is revoked, the dashboard silently stops updating — there is no alert or fallback.
 
-**Where in code:** `src/workflows/workflow-02.ts:handleKeyword()` — `updateDashboard(contact.client_id).catch(() => {})`, same pattern in `src/queue/scheduler.ts:processBumpCloseJob()`, `processReachBackOutJob()`
+**Where in code:** `src/workflows/ai-send-router.ts:handleKeyword()` — `updateDashboard(contact.client_id).catch(() => {})`, same pattern in `src/queue/scheduler.ts:processBumpCloseJob()`, `processReachBackOutJob()`
 
 ---
 
@@ -156,7 +156,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** Template misconfiguration (wrong variable count, unapproved name) causes a send failure that falls back to freeform or SMS — which may or may not be the desired behaviour. Template approval through Meta adds external operational overhead and delays.
 
-**Where in code:** `src/workflows/workflow-00.ts:sendFirstMessage()`, `src/queue/scheduler.ts:processFollowUpJob()`, `processBumpJob()`, `processReachBackOutJob()` — all share the same priority logic
+**Where in code:** `src/workflows/outbound-first-message.ts:sendFirstMessage()`, `src/queue/scheduler.ts:processFollowUpJob()`, `processBumpJob()`, `processReachBackOutJob()` — all share the same priority logic
 
 ---
 
@@ -168,7 +168,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **Trade-off:** The bump template matrix must be fully populated (3 groups × 3 variations = 9 messages total) or an index can point to an empty/null slot, causing the send to fall back to freeform or SMS silently. Managing 9 template variants per client adds configuration overhead.
 
-**Where in code:** `src/workflows/workflow-02.ts:handleAIResponseReady()` — `bump_variation_index = (current + 1) % 3`; `src/queue/scheduler.ts:processBumpJob()` — `config.bump_templates[contact.bump_index][contact.bump_variation_index]`
+**Where in code:** `src/workflows/ai-send-router.ts:handleAIResponseReady()` — `bump_variation_index = (current + 1) % 3`; `src/queue/scheduler.ts:processBumpJob()` — `config.bump_templates[contact.bump_index][contact.bump_variation_index]`
 
 ---
 

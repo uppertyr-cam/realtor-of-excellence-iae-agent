@@ -1,7 +1,7 @@
 # The Three Workflows
 
 ## Workflow 00 — Conversational Starter (outbound)
-**File:** `src/workflows/workflow-00.ts`
+**File:** `src/workflows/outbound-first-message.ts`
 **Triggered by:** `POST /webhook/crm`
 
 1. Normalise CRM payload to internal schema
@@ -20,7 +20,7 @@ Also in **Workflow 02**, after every AI send:
 ---
 
 ## Workflow 01 — AI Router (inbound)
-**File:** `src/workflows/workflow-01.ts`
+**File:** `src/workflows/inbound-reply-handler.ts`
 **Triggered by:** `POST /webhook/whatsapp` or `POST /webhook/sms`
 
 1. Store message in `message_buffer` table
@@ -42,7 +42,7 @@ Also in **Workflow 02**, after every AI send:
 ---
 
 ## Workflow 02 — Send + Keyword Detection
-**File:** `src/workflows/workflow-02.ts`
+**File:** `src/workflows/ai-send-router.ts`
 **Triggered by:** Workflow 01 calling `handleAIResponseReady(contactId)`
 
 1. Remove `reply_generating` tag

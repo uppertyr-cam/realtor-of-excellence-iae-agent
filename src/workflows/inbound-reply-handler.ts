@@ -250,7 +250,7 @@ async function triggerAIGeneration(
     logger.info('AI response stored — triggering Workflow 02', { contactId, keyword })
 
     // Trigger Workflow 02 inline
-    const { handleAIResponseReady } = await import('./workflow-02')
+    const { handleAIResponseReady } = await import('./ai-send-router')
     await handleAIResponseReady(contactId, keyword, scheduledAt)
 
   } catch (err: any) {

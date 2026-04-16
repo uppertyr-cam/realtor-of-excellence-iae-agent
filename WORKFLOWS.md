@@ -6,7 +6,7 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 
 ## IAE-00 — Outbound First Message
 
-**File:** `src/workflows/workflow-00.ts`
+**File:** `src/workflows/outbound-first-message.ts`
 **Trigger:** `POST /webhook/crm`
 **Auth:** `x-iae-secret` header checked against `INTERNAL_WEBHOOK_SECRET`
 **Entry function:** `handleCrmWebhook(rawPayload, crmType)`
@@ -146,7 +146,7 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 
 ## IAE-01 — Inbound Reply Handler
 
-**File:** `src/workflows/workflow-01.ts`
+**File:** `src/workflows/inbound-reply-handler.ts`
 **Trigger:** `POST /webhook/whatsapp` or `POST /webhook/sms`
 **Constant:** `DEBOUNCE_MS = 5000` (5 seconds)
 **Entry function:** `handleInboundMessage({ contact_id, message, channel, phone_number })`
@@ -304,7 +304,7 @@ Meta and Twilio require fast ACK — return before processing
 
 ## IAE-02 — AI Response Send + Keyword Routing
 
-**File:** `src/workflows/workflow-02.ts`
+**File:** `src/workflows/ai-send-router.ts`
 **Trigger:** Called inline by IAE-01 (`handleAIResponseReady(contactId, routedKeyword?, scheduledAt?, chatHistory?)`)
 
 ---

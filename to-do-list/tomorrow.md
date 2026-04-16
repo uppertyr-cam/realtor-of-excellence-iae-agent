@@ -44,7 +44,7 @@ When a lead asks a question Cameron can't answer, instead of deflecting, relay i
 5. Agent replies "APPROVE" → system appends Q&A to `prompts/conversation.txt` FAQ section
 6. Next time someone asks that question, AI answers from FAQ without calling `ask_agent`
 
-**Files to modify:** `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/workflow-01.ts`, `src/workflows/workflow-02.ts`, `prompts/conversation.txt`, `src/utils/types.ts`
+**Files to modify:** `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/inbound-reply-handler.ts`, `src/workflows/ai-send-router.ts`, `prompts/conversation.txt`, `src/utils/types.ts`
 
 See full plan at `/Users/phone121212/.claude/plans/curried-scribbling-diffie.md`
 
@@ -70,7 +70,7 @@ Note: This requires the Business Manager to be fully verified. If it's still pen
 - [ ] Set `reach_back_out_message_template` on `realtor_of_excellence` client via `POST /admin/clients`
 - [ ] Fix missing `followup1_sent_at` DB column — add to `src/db/schema.sql` + run migration
 - [ ] Change weekly report email in `src/reports/weekly-report.ts` (currently `cameronbritt111@gmail.com`)
-- [ ] Delete orphan `client_001` DB record
+- [x] Delete orphan `client_001` DB record — done
 
 ---
 

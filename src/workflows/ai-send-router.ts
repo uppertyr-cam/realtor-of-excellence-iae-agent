@@ -16,6 +16,7 @@ import { updateDashboard } from '../reports/dashboard'
 import { buildWeeklyReport } from '../reports/weekly-report'
 import { generateContactNote } from '../ai/generate'
 import type { DetectedKeyword, SendResult } from '../utils/types'
+import { scheduleBumps, cancelBumps, cancelPendingBumps } from './bump-handler'
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleAIResponseReady(contactId: string, routedKeyword?: DetectedKeyword, scheduledAt?: string | null, chatHistory?: string) {
@@ -97,15 +98,7 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
 
   // ── Step 5b: Reset bump clock — cancel any pending bumps and schedule 3 new ones ──
   await cancelBumps(contactId)
-  await db.query(
-    `INSERT INTO outbound_queue (client_id, contact_id, message_type, status, scheduled_at)
-     VALUES
-       ($1,$2,'bump','pending', NOW() + INTERVAL '24 hours'),
-       ($1,$2,'bump','pending', NOW() + INTERVAL '48 hours'),
-       ($1,$2,'bump','pending', NOW() + INTERVAL '72 hours'),
-       ($1,$2,'bump_close','pending', NOW() + INTERVAL '73 hours')`,
-    [config.id, contactId]
-  )
+  await scheduleBumps(contactId, config.id)
 
   // Increment bump_variation_index for next cycle (rotates 0→1→2→0...)
   await db.query(
@@ -205,10 +198,10 @@ async function handleKeyword(
 
   switch (keyword) {
     case 'not_interested':
-      await db.query(`UPDATE contacts SET workflow_stage='closed', tags=array_append(tags,'not_interested') WHERE id=$1`, [contactId])
+      await db.query(`UPDATE contacts SET workflow_stage='closed', tags=array_append(array_append(tags,'not_interested'),'manual_takeover') WHERE id=$1`, [contactId])
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['not-interested'],
+        tags_add: ['not-interested', 'manual-takeover'],
         note: `IAE: Lead is not interested.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Not Interested' } : undefined,
       }, config, contact.crm_callback_url)
@@ -345,26 +338,6 @@ async function sendMessage(contact: any, config: any, text: string, channel: str
     return sendWhatsAppMessage(contact.phone_number, text, config.wa_phone_number_id, config.wa_access_token)
   }
   return sendSmsMessage(contact.phone_number, text, config.sms_account_sid, config.sms_auth_token, config.sms_from_number)
-}
-
-// Cancel 24h/48h/72h bumps (reset the clock after each AI reply)
-async function cancelBumps(contactId: string) {
-  await db.query(
-    `UPDATE outbound_queue SET status='cancelled'
-     WHERE contact_id=$1 AND status='pending'
-     AND message_type IN ('bump','bump_close')`,
-    [contactId]
-  )
-}
-
-// Cancel all scheduled follow-ups and bumps (used on terminal outcomes)
-async function cancelPendingBumps(contactId: string) {
-  await db.query(
-    `UPDATE outbound_queue SET status='cancelled'
-     WHERE contact_id=$1 AND status='pending'
-     AND message_type IN ('followup1','followup2','followup3','bump','bump_close')`,
-    [contactId]
-  )
 }
 
 async function sendWithRetry(fn: () => Promise<SendResult>, maxRetries = 3): Promise<SendResult> {

@@ -477,7 +477,7 @@ POST /webhook/whatsapp  or  POST /webhook/sms
   │  [if audio] downloadWhatsAppAudio() → transcribeAudio()
   │
   ▼
-handleInboundMessage()                       src/workflows/workflow-01.ts
+handleInboundMessage()                       src/workflows/inbound-reply-handler.ts
   │
   ▼
 INSERT message_buffer                        Postgres
@@ -499,7 +499,7 @@ generateAIResponse()                         src/ai/generate.ts
 INSERT ai_responses                          Postgres
   │
   ▼
-handleAIResponseReady()                      src/workflows/workflow-02.ts
+handleAIResponseReady()                      src/workflows/ai-send-router.ts
   │  Sends message, keyword routing, CRM write
   │
   ▼
