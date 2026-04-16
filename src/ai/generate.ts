@@ -93,8 +93,8 @@ ${params.latestMessage}
       const response = await Promise.race([
         client.messages.create({
           model: 'claude-sonnet-4-6',
-          max_tokens: 1500,
-          thinking: { type: 'enabled', budget_tokens: 500 } as any,
+          max_tokens: 2000,
+          thinking: { type: 'enabled', budget_tokens: 1024 } as any,
           system: [
             {
               type: 'text',
