@@ -44,13 +44,26 @@ const ROUTE_LEAD_TOOL: Anthropic.Tool = {
   },
 }
 
+const ASK_AGENT_TOOL: Anthropic.Tool = {
+  name: 'ask_agent',
+  description:
+    'Forward an unanswered question to the real estate agent. Use when the lead asks something specific you cannot answer: specific property prices, current availability, area-specific details, or anything factual not in this prompt. Do NOT include any reply message to the lead — the system will pause the conversation and relay the question directly to the agent.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      question: { type: 'string', description: 'The exact question the lead asked' },
+    },
+    required: ['question'],
+  },
+}
+
 export async function generateAIResponse(params: {
   promptFilePath: string
   chatHistory: string
   leadData: Record<string, string>
   latestMessage: string
   clientName: string
-}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null }> {
+}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null; agentQuestion: string | null }> {
   // Read the prompt file fresh every time
   // This means you can edit the file and it takes effect immediately
   const promptPath = path.resolve(process.cwd(), params.promptFilePath)
@@ -102,7 +115,7 @@ ${params.latestMessage}
               cache_control: { type: 'ephemeral' },
             } as any,
           ],
-          tools: [ROUTE_LEAD_TOOL],
+          tools: [ROUTE_LEAD_TOOL, ASK_AGENT_TOOL],
           tool_choice: { type: 'auto' },
           messages: [{ role: 'user', content: userMessage }],
         }, {
@@ -132,8 +145,13 @@ ${params.latestMessage}
 
       const scheduledAt: string | null = toolUse?.input?.scheduled_at ?? null
 
-      logger.info('AI response generated', { length: text.length, keyword, scheduledAt })
-      return { text, keyword, scheduledAt }
+      const askAgentUse = response.content.find(
+        (b) => b.type === 'tool_use' && (b as any).name === 'ask_agent'
+      ) as any | undefined
+      const agentQuestion: string | null = askAgentUse?.input?.question ?? null
+
+      logger.info('AI response generated', { length: text.length, keyword, scheduledAt, agentQuestion: !!agentQuestion })
+      return { text, keyword, scheduledAt, agentQuestion }
     } catch (err: any) {
       lastError = err
       logger.warn('AI generation attempt failed', { attempt, error: err.message })

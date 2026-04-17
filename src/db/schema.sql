@@ -240,4 +240,28 @@ BEGIN
   ) THEN
     ALTER TABLE clients ADD COLUMN stage_agents JSONB DEFAULT '{}'::jsonb;
   END IF;
+
+  -- Agent Q&A relay: stores the question being relayed to the agent
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='pending_question'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN pending_question TEXT;
+  END IF;
+
+  -- Agent Q&A relay: stores the agent's answer while awaiting FAQ approval
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='pending_answer'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN pending_answer TEXT;
+  END IF;
+
+  -- WhatsApp approved template name for agent question notifications (works outside 24h window)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='agent_question_template'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN agent_question_template TEXT;
+  END IF;
 END $$;

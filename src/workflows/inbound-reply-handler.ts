@@ -189,7 +189,14 @@ async function routeContact(
     return
   }
 
-  // 5.0 — Manual takeover
+  // 5.0 — Awaiting agent answer — do not run AI while question is pending
+  if (tags.includes('awaiting_agent_answer')) {
+    logger.info('Route: awaiting agent answer — skipping AI', { contactId })
+    await removeTag(contactId, 'reply_generating')
+    return
+  }
+
+  // 5.1 — Manual takeover
   if (tags.includes('manual_takeover')) {
     logger.info('Route: manual takeover', { contactId })
     await removeTag(contactId, 'reply_generating')
@@ -225,13 +232,48 @@ async function triggerAIGeneration(
   const contactId = contact.id
 
   try {
-    const { text: responseText, keyword, scheduledAt } = await generateAIResponse({
+    const { text: responseText, keyword, scheduledAt, agentQuestion } = await generateAIResponse({
       promptFilePath:  config.prompt_file_path,
       chatHistory,
       leadData,
       latestMessage,
       clientName: config.name,
     })
+
+    // Agent relay — AI flagged a question it can't answer
+    if (agentQuestion) {
+      await db.query(
+        `UPDATE contacts SET
+           tags = array_append(tags, 'awaiting_agent_answer'),
+           pending_question = $1
+         WHERE id = $2`,
+        [agentQuestion, contactId]
+      )
+      const fullName = `${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim()
+      if (config.agent_question_template) {
+        const { sendWhatsAppTemplate } = await import('../channels/whatsapp')
+        const agentPhone = config.stage_agents?.default?.target
+        if (agentPhone) {
+          await sendWhatsAppTemplate(
+            agentPhone,
+            config.agent_question_template,
+            [fullName, contact.phone_number, agentQuestion],
+            config.wa_phone_number_id!,
+            config.wa_access_token!
+          )
+        }
+      } else {
+        const agentMsg = [
+          `❓ Question from lead:`,
+          `Name: ${fullName}`,
+          `Phone: ${contact.phone_number}`,
+          `Message: ${agentQuestion}`,
+        ].join('\n')
+        await notifyStageAgent(contact, config, agentMsg)
+      }
+      await removeTag(contactId, 'reply_generating')
+      return
+    }
 
     // Store AI response for Workflow 02 to send
     await db.query(

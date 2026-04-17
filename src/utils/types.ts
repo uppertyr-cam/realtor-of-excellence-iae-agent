@@ -38,6 +38,8 @@ export interface Contact {
   last_reply_at: Date | null
   last_message_at: Date | null
   lead_response: string | null
+  pending_question: string | null
+  pending_answer: string | null
   created_at: Date
   updated_at: Date
 }
@@ -86,6 +88,7 @@ export interface ClientConfig {
   loop_counter_reset_hours: number | null
   openai_api_key: string | null
   stage_agents: Record<string, { channel: string; target: string }> | null
+  agent_question_template: string | null
 }
 
 // ─── SEND RESULT ─────────────────────────────────────────────
