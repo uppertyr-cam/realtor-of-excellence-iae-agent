@@ -84,7 +84,8 @@ async function buildMetricsTab(
   spreadsheetId: string,
   clientId: string,
   tabTitle: string,
-  days: number,
+  periodStart: Date,
+  periodEnd: Date,
   periodLabel: string
 ) {
   const metaRes = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties)' })
@@ -102,10 +103,9 @@ async function buildMetricsTab(
     sheetId = addRes.data.replies![0].addSheet!.properties!.sheetId!
   }
 
-  const periodStart = new Date()
-  periodStart.setDate(periodStart.getDate() - days)
   const periodStartStr = periodStart.toISOString()
-  const dateRange = `${periodStart.toLocaleDateString('en-ZA')} – ${new Date().toLocaleDateString('en-ZA')}`
+  const periodEndStr = periodEnd.toISOString()
+  const dateRange = `${periodStart.toLocaleDateString('en-ZA')} – ${periodEnd.toLocaleDateString('en-ZA')}`
 
   const kpiRes = await db.query(
     `SELECT
@@ -117,8 +117,8 @@ async function buildMetricsTab(
        SUM(total_tokens_used)                                                                   AS total_tokens,
        SUM(crm_sync_failures)                                                                   AS crm_failures
      FROM contacts
-     WHERE client_id=$1 AND created_at >= $2`,
-    [clientId, periodStartStr]
+     WHERE client_id=$1 AND created_at >= $2 AND created_at < $3`,
+    [clientId, periodStartStr, periodEndStr]
   )
   const kpi = kpiRes.rows[0]
 
@@ -130,8 +130,8 @@ async function buildMetricsTab(
        COUNT(CASE WHEN bump_index >= 2 THEN 1 END)              AS bump_2,
        COUNT(CASE WHEN bump_index >= 3 THEN 1 END)              AS bump_3
      FROM contacts
-     WHERE client_id=$1 AND created_at >= $2`,
-    [clientId, periodStartStr]
+     WHERE client_id=$1 AND created_at >= $2 AND created_at < $3`,
+    [clientId, periodStartStr, periodEndStr]
   )
   const followupSentRes = await db.query(
     `SELECT
@@ -139,8 +139,8 @@ async function buildMetricsTab(
        COUNT(CASE WHEN message_type='followup2' THEN 1 END) AS followup_2,
        COUNT(CASE WHEN message_type='followup3' THEN 1 END) AS followup_3
      FROM outbound_queue
-     WHERE client_id=$1 AND status='sent' AND sent_at >= $2`,
-    [clientId, periodStartStr]
+     WHERE client_id=$1 AND status='sent' AND sent_at >= $2 AND sent_at < $3`,
+    [clientId, periodStartStr, periodEndStr]
   )
   const sent = { ...contactSentRes.rows[0], ...followupSentRes.rows[0] }
 
@@ -148,9 +148,9 @@ async function buildMetricsTab(
   const replyRes = await db.query(
     `SELECT replied_after, COUNT(*) AS replies
      FROM contacts
-     WHERE client_id=$1 AND replied_after IS NOT NULL AND created_at >= $2
+     WHERE client_id=$1 AND replied_after IS NOT NULL AND created_at >= $2 AND created_at < $3
      GROUP BY replied_after`,
-    [clientId, periodStartStr]
+    [clientId, periodStartStr, periodEndStr]
   )
   const replyMap: Record<string, number> = {}
   for (const r of replyRes.rows) replyMap[r.replied_after] = Number(r.replies)
@@ -449,19 +449,57 @@ export async function buildWeeklyReport(): Promise<string> {
     // Apply all formatting for this tab to its master spreadsheet
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: requests.splice(0) } })
 
-    // ── Metrics tabs (Weekly / Monthly / Yearly) ────────────
-    const periods = [
-      { title: 'Weekly Metrics',  days: 7,   label: 'week'  },
-      { title: 'Monthly Metrics', days: 30,  label: 'month' },
-      { title: 'Yearly Metrics',  days: 365, label: 'year'  },
-    ]
-
-    for (const period of periods) {
-      await buildMetricsTab(sheets, masterId, clientRow.id, period.title, period.days, period.label)
-    }
+    // ── Weekly Metrics tab (previous Mon–Sun) ────────────────
+    const now = new Date()
+    const weekEnd = new Date(now)
+    weekEnd.setDate(now.getDate() - (now.getDay() === 0 ? 0 : now.getDay()))
+    weekEnd.setHours(0, 0, 0, 0)
+    const weekStart = new Date(weekEnd)
+    weekStart.setDate(weekEnd.getDate() - 7)
+    await buildMetricsTab(sheets, masterId, clientRow.id, 'Weekly Metrics', weekStart, weekEnd, 'week')
   }
 
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
+}
+
+// ─── MONTHLY METRICS ─────────────────────────────────────────
+// Called on the 1st of each month — shows the previous calendar month
+export async function buildMonthlyMetrics() {
+  const auth = getAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+  const clientsRes = await db.query(`SELECT id FROM clients ORDER BY name`)
+
+  const now = new Date()
+  const monthEnd = new Date(now.getFullYear(), now.getMonth(), 1)   // 1st of current month
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1) // 1st of previous month
+
+  for (const clientRow of clientsRes.rows) {
+    const freshRes = await db.query(`SELECT dashboard_sheet_id FROM clients WHERE id=$1`, [clientRow.id])
+    const masterId: string = freshRes.rows[0]?.dashboard_sheet_id || ''
+    if (!masterId) continue
+    await buildMetricsTab(sheets, masterId, clientRow.id, 'Monthly Metrics', monthStart, monthEnd, 'month')
+  }
+  logger.info('Monthly metrics updated')
+}
+
+// ─── YEARLY METRICS ──────────────────────────────────────────
+// Called on Jan 1st — shows the previous calendar year
+export async function buildYearlyMetrics() {
+  const auth = getAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+  const clientsRes = await db.query(`SELECT id FROM clients ORDER BY name`)
+
+  const now = new Date()
+  const yearEnd = new Date(now.getFullYear(), 0, 1)       // Jan 1st of current year
+  const yearStart = new Date(now.getFullYear() - 1, 0, 1) // Jan 1st of previous year
+
+  for (const clientRow of clientsRes.rows) {
+    const freshRes = await db.query(`SELECT dashboard_sheet_id FROM clients WHERE id=$1`, [clientRow.id])
+    const masterId: string = freshRes.rows[0]?.dashboard_sheet_id || ''
+    if (!masterId) continue
+    await buildMetricsTab(sheets, masterId, clientRow.id, 'Yearly Metrics', yearStart, yearEnd, 'year')
+  }
+  logger.info('Yearly metrics updated')
 }
 
 export async function sendWeeklyReport() {

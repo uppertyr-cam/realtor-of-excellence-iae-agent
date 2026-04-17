@@ -5,8 +5,9 @@ import { sendSmsMessage } from '../channels/sms'
 import { writeToCrm } from '../crm/adapter'
 import { processDripQueue } from '../workflows/outbound-first-message'
 import { processBumpQueue, processBumpCloseQueue, scheduleBumps } from '../workflows/bump-handler'
-import { sendWeeklyReport, buildWeeklyReport } from '../reports/weekly-report'
+import { sendWeeklyReport, buildWeeklyReport, buildMonthlyMetrics, buildYearlyMetrics } from '../reports/weekly-report'
 import { updateDashboard } from '../reports/dashboard'
+import { generateReachBackOutMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
 
 // ─── START SCHEDULER ─────────────────────────────────────────
@@ -38,6 +39,12 @@ export function startScheduler() {
 
   // Weekly report — every Monday at 9am Africa/Johannesburg
   scheduleWeeklyReport()
+
+  // Monthly metrics — 1st of each month at 9am Africa/Johannesburg
+  scheduleMonthlyMetrics()
+
+  // Yearly metrics — Jan 1st at 9am Africa/Johannesburg
+  scheduleYearlyMetrics()
 }
 
 // ─── WEEKLY REPORT SCHEDULER ─────────────────────────────────
@@ -62,6 +69,59 @@ function scheduleWeeklyReport() {
         logger.error('Weekly report failed', { error: err.message })
       }
       scheduleNext() // schedule the following week
+    }, ms)
+  }
+
+  scheduleNext()
+}
+
+// ─── MONTHLY METRICS SCHEDULER ───────────────────────────────
+function scheduleMonthlyMetrics() {
+  function msUntilFirst9am(): number {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Johannesburg' }))
+    const target = new Date(now)
+    if (now.getDate() === 1 && now.getHours() < 9) {
+      target.setHours(9, 0, 0, 0)
+    } else {
+      target.setMonth(target.getMonth() + 1, 1)
+      target.setHours(9, 0, 0, 0)
+    }
+    return target.getTime() - now.getTime()
+  }
+
+  function scheduleNext() {
+    const ms = msUntilFirst9am()
+    logger.info(`Monthly metrics scheduled in ${Math.round(ms / 3600000)}h`)
+    setTimeout(async () => {
+      try { await buildMonthlyMetrics() } catch (err: any) {
+        logger.error('Monthly metrics failed', { error: err.message })
+      }
+      scheduleNext()
+    }, ms)
+  }
+
+  scheduleNext()
+}
+
+// ─── YEARLY METRICS SCHEDULER ────────────────────────────────
+function scheduleYearlyMetrics() {
+  function msUntilJan1st9am(): number {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Johannesburg' }))
+    const target = new Date(now.getFullYear() + 1, 0, 1, 9, 0, 0, 0)
+    if (now.getMonth() === 0 && now.getDate() === 1 && now.getHours() < 9) {
+      target.setFullYear(now.getFullYear())
+    }
+    return target.getTime() - now.getTime()
+  }
+
+  function scheduleNext() {
+    const ms = msUntilJan1st9am()
+    logger.info(`Yearly metrics scheduled in ${Math.round(ms / 3600000)}h`)
+    setTimeout(async () => {
+      try { await buildYearlyMetrics() } catch (err: any) {
+        logger.error('Yearly metrics failed', { error: err.message })
+      }
+      scheduleNext()
     }, ms)
   }
 
@@ -227,15 +287,14 @@ async function processReachBackOutJob(job: any) {
 
   const config = await getClientConfig(contact.client_id)
 
-  if (!config.reach_back_out_message_template) {
-    await db.query(`UPDATE outbound_queue SET status='failed', error='reach_back_out_message_template not configured' WHERE id=$1`, [job.id])
-    logger.warn('reach_back_out_message_template not configured — skipping', { contact_id: contact.id })
-    return
-  }
+  const firstName = contact.first_name || ''
+  const agentName = config.agent_name || ''
 
-  const message = config.reach_back_out_message_template
-    .replace(/{{first_name}}/g, contact.first_name || '')
-    .replace(/{{last_name}}/g, contact.last_name || '')
+  const aiPhrase = await generateReachBackOutMessage({
+    conversationHistory: contact.ai_memory || '',
+  })
+
+  const message = `Hi ${firstName}, it's ${agentName} again from Realtor of Excellence. Just following up as we discussed — ${aiPhrase}. Looking forward to helping you find the right place!`
 
   const channel = contact.channel || config.channel
   const waTemplateName = config.wa_reach_back_out_template_name ?? null
@@ -245,7 +304,7 @@ async function processReachBackOutJob(job: any) {
     result = await sendWhatsAppTemplate(
       contact.phone_number,
       waTemplateName,
-      [contact.first_name || '', contact.last_name || ''],
+      [firstName, agentName, aiPhrase],
       config.wa_phone_number_id!,
       config.wa_access_token!
     )
