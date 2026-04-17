@@ -449,7 +449,7 @@ export async function buildWeeklyReport(): Promise<string> {
     // Apply all formatting for this tab to its master spreadsheet
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: requests.splice(0) } })
 
-    // ── Weekly Metrics tab (previous Mon–Sun) ────────────────
+    // ── Weekly Metrics tab (previous Mon–Sun) + rolling windows
     const now = new Date()
     const weekEnd = new Date(now)
     weekEnd.setDate(now.getDate() - (now.getDay() === 0 ? 0 : now.getDay()))
@@ -457,6 +457,14 @@ export async function buildWeeklyReport(): Promise<string> {
     const weekStart = new Date(weekEnd)
     weekStart.setDate(weekEnd.getDate() - 7)
     await buildMetricsTab(sheets, masterId, clientRow.id, 'Weekly Metrics', weekStart, weekEnd, 'week')
+
+    // Rolling windows — update every Monday alongside weekly
+    for (const p of [{ title: '1 Month Overview', months: 1 }, { title: '4 Month Overview', months: 4 }, { title: '8 Month Overview', months: 8 }]) {
+      const end = new Date(now)
+      const start = new Date(now)
+      start.setMonth(start.getMonth() - p.months)
+      await buildMetricsTab(sheets, masterId, clientRow.id, p.title, start, end, `${p.months} month`)
+    }
   }
 
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
