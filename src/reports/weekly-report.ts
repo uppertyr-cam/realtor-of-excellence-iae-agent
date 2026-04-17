@@ -122,21 +122,27 @@ async function buildMetricsTab(
   )
   const kpi = kpiRes.rows[0]
 
-  // Sent counts per touchpoint
-  const sentRes = await db.query(
+  // Sent counts — first message + bumps from contacts, follow-ups from outbound_queue
+  const contactSentRes = await db.query(
     `SELECT
-       COUNT(CASE WHEN first_message_at IS NOT NULL THEN 1 END)   AS first_message,
-       COUNT(CASE WHEN followup1_sent_at IS NOT NULL THEN 1 END)  AS followup_1,
-       COUNT(CASE WHEN followup2_sent_at IS NOT NULL THEN 1 END)  AS followup_2,
-       COUNT(CASE WHEN followup3_sent_at IS NOT NULL THEN 1 END)  AS followup_3,
-       COUNT(CASE WHEN bump_index >= 1 THEN 1 END)                AS bump_1,
-       COUNT(CASE WHEN bump_index >= 2 THEN 1 END)                AS bump_2,
-       COUNT(CASE WHEN bump_index >= 3 THEN 1 END)                AS bump_3
+       COUNT(CASE WHEN first_message_at IS NOT NULL THEN 1 END) AS first_message,
+       COUNT(CASE WHEN bump_index >= 1 THEN 1 END)              AS bump_1,
+       COUNT(CASE WHEN bump_index >= 2 THEN 1 END)              AS bump_2,
+       COUNT(CASE WHEN bump_index >= 3 THEN 1 END)              AS bump_3
      FROM contacts
      WHERE client_id=$1 AND created_at >= $2`,
     [clientId, periodStartStr]
   )
-  const sent = sentRes.rows[0]
+  const followupSentRes = await db.query(
+    `SELECT
+       COUNT(CASE WHEN message_type='followup1' THEN 1 END) AS followup_1,
+       COUNT(CASE WHEN message_type='followup2' THEN 1 END) AS followup_2,
+       COUNT(CASE WHEN message_type='followup3' THEN 1 END) AS followup_3
+     FROM outbound_queue
+     WHERE client_id=$1 AND status='sent' AND sent_at >= $2`,
+    [clientId, periodStartStr]
+  )
+  const sent = { ...contactSentRes.rows[0], ...followupSentRes.rows[0] }
 
   // Reply counts per touchpoint
   const replyRes = await db.query(

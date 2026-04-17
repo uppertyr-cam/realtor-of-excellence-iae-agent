@@ -97,10 +97,10 @@ async function processBufferedMessages(contactId: string, channel: string) {
          first_reply_at=COALESCE(first_reply_at, NOW()),
          replied_after=CASE WHEN first_reply_at IS NULL THEN
            CASE
-             WHEN bump_index > 0                  THEN 'bump_'      || bump_index
-             WHEN followup3_sent_at IS NOT NULL    THEN 'followup_3'
-             WHEN followup2_sent_at IS NOT NULL    THEN 'followup_2'
-             WHEN followup1_sent_at IS NOT NULL    THEN 'followup_1'
+             WHEN bump_index > 0                        THEN 'bump_' || bump_index
+             WHEN workflow_stage = 'followup3_sent'      THEN 'followup_3'
+             WHEN workflow_stage = 'followup2_sent'      THEN 'followup_2'
+             WHEN workflow_stage = 'followup1_sent'      THEN 'followup_1'
              ELSE 'first_message'
            END
          ELSE replied_after END,
