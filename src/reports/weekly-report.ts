@@ -240,6 +240,54 @@ async function buildMetricsTab(
   })
 }
 
+const TAB_ORDER = [
+  'Dashboard',
+  'Weekly Report',
+  'Weekly Metrics',
+  'Monthly Metrics',
+  '4 Month Metrics',
+  '8 Month Metrics',
+  'Yearly Metrics',
+]
+
+const STALE_TABS = ['1 Month Overview', '4 Month Overview', '8 Month Overview']
+
+async function cleanupAndReorderTabs(sheets: any, spreadsheetId: string) {
+  const metaRes = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties)' })
+  const allSheets: { title: string; sheetId: number; index: number }[] =
+    (metaRes.data.sheets || []).map((s: any) => ({
+      title: s.properties.title,
+      sheetId: s.properties.sheetId,
+      index: s.properties.index,
+    }))
+
+  const requests: any[] = []
+
+  // Delete stale Overview tabs
+  for (const stale of STALE_TABS) {
+    const found = allSheets.find(s => s.title === stale)
+    if (found) requests.push({ deleteSheet: { sheetId: found.sheetId } })
+  }
+
+  // Reorder remaining tabs
+  const remaining = allSheets.filter(s => !STALE_TABS.includes(s.title))
+  TAB_ORDER.forEach((title, desiredIndex) => {
+    const sheet = remaining.find(s => s.title === title)
+    if (sheet && sheet.index !== desiredIndex) {
+      requests.push({
+        updateSheetProperties: {
+          properties: { sheetId: sheet.sheetId, index: desiredIndex },
+          fields: 'index',
+        }
+      })
+    }
+  })
+
+  if (requests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } })
+  }
+}
+
 export async function buildWeeklyReport(): Promise<string> {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
@@ -458,13 +506,16 @@ export async function buildWeeklyReport(): Promise<string> {
     weekStart.setDate(weekEnd.getDate() - 7)
     await buildMetricsTab(sheets, masterId, clientRow.id, 'Weekly Metrics', weekStart, weekEnd, 'week')
 
-    // Rolling windows — update every Monday alongside weekly
-    for (const p of [{ title: '1 Month Overview', months: 1 }, { title: '4 Month Overview', months: 4 }, { title: '8 Month Overview', months: 8 }]) {
+    // Rolling windows — 4 and 8 month, update every Monday
+    for (const p of [{ title: '4 Month Metrics', months: 4 }, { title: '8 Month Metrics', months: 8 }]) {
       const end = new Date(now)
       const start = new Date(now)
       start.setMonth(start.getMonth() - p.months)
       await buildMetricsTab(sheets, masterId, clientRow.id, p.title, start, end, `${p.months} month`)
     }
+
+    // Clean up old Overview tabs if they exist, then reorder all tabs
+    await cleanupAndReorderTabs(sheets, masterId)
   }
 
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
