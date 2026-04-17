@@ -91,13 +91,16 @@ function scheduleMonthlyMetrics() {
 
   function scheduleNext() {
     const ms = msUntilFirst9am()
+    // Cap at 24h — setTimeout overflows at >~24.8 days (32-bit limit)
+    const delay = Math.min(ms, 24 * 3600_000)
     logger.info(`Monthly metrics scheduled in ${Math.round(ms / 3600000)}h`)
     setTimeout(async () => {
+      if (msUntilFirst9am() > 60_000) { scheduleNext(); return } // not time yet
       try { await buildMonthlyMetrics() } catch (err: any) {
         logger.error('Monthly metrics failed', { error: err.message })
       }
       scheduleNext()
-    }, ms)
+    }, delay)
   }
 
   scheduleNext()
@@ -116,13 +119,16 @@ function scheduleYearlyMetrics() {
 
   function scheduleNext() {
     const ms = msUntilJan1st9am()
+    // Cap at 24h — setTimeout overflows at >~24.8 days (32-bit limit)
+    const delay = Math.min(ms, 24 * 3600_000)
     logger.info(`Yearly metrics scheduled in ${Math.round(ms / 3600000)}h`)
     setTimeout(async () => {
+      if (msUntilJan1st9am() > 60_000) { scheduleNext(); return } // not time yet
       try { await buildYearlyMetrics() } catch (err: any) {
         logger.error('Yearly metrics failed', { error: err.message })
       }
       scheduleNext()
-    }, ms)
+    }, delay)
   }
 
   scheduleNext()
