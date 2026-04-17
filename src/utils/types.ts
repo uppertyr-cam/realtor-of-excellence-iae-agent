@@ -40,6 +40,7 @@ export interface Contact {
   lead_response: string | null
   pending_question: string | null
   pending_answer: string | null
+  replied_after: string | null
   webhook_received_at: Date | null
   first_reply_at: Date | null
   total_tokens_used: number

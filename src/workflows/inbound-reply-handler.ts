@@ -95,6 +95,15 @@ async function processBufferedMessages(contactId: string, channel: string) {
          tags=array_append(tags,'reply_generating'),
          last_reply_at=NOW(),
          first_reply_at=COALESCE(first_reply_at, NOW()),
+         replied_after=CASE WHEN first_reply_at IS NULL THEN
+           CASE
+             WHEN bump_index > 0                  THEN 'bump_'      || bump_index
+             WHEN followup3_sent_at IS NOT NULL    THEN 'followup_3'
+             WHEN followup2_sent_at IS NOT NULL    THEN 'followup_2'
+             WHEN followup1_sent_at IS NOT NULL    THEN 'followup_1'
+             ELSE 'first_message'
+           END
+         ELSE replied_after END,
          lead_response=$1,
          updated_at=NOW()
        WHERE id=$2`,

@@ -286,6 +286,14 @@ BEGIN
     ALTER TABLE contacts ADD COLUMN crm_sync_failures INTEGER NOT NULL DEFAULT 0;
   END IF;
 
+  -- Track which touchpoint triggered the first reply
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='replied_after'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN replied_after TEXT;
+  END IF;
+
   -- Rate limiting persistence (replaces in-memory Maps)
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns

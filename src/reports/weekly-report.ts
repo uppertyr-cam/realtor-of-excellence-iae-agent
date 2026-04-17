@@ -122,13 +122,32 @@ async function buildMetricsTab(
   )
   const kpi = kpiRes.rows[0]
 
-  const bumpRes = await db.query(
-    `SELECT bump_index, COUNT(*) AS replies
+  const touchpointRes = await db.query(
+    `SELECT replied_after, COUNT(*) AS replies
      FROM contacts
-     WHERE client_id=$1 AND first_reply_at IS NOT NULL AND bump_index > 0 AND created_at >= $2
-     GROUP BY bump_index ORDER BY bump_index`,
+     WHERE client_id=$1 AND first_reply_at IS NOT NULL AND replied_after IS NOT NULL AND created_at >= $2
+     GROUP BY replied_after
+     ORDER BY CASE replied_after
+       WHEN 'first_message' THEN 1
+       WHEN 'followup_1'    THEN 2
+       WHEN 'followup_2'    THEN 3
+       WHEN 'followup_3'    THEN 4
+       WHEN 'bump_1'        THEN 5
+       WHEN 'bump_2'        THEN 6
+       WHEN 'bump_3'        THEN 7
+       ELSE 8 END`,
     [clientId, periodStartStr]
   )
+
+  const TOUCHPOINT_LABELS: Record<string, string> = {
+    first_message: 'First Message',
+    followup_1: 'Follow-Up 1 (Day 7)',
+    followup_2: 'Follow-Up 2 (Day 14)',
+    followup_3: 'Follow-Up 3 (Day 21)',
+    bump_1: 'Bump 1 (24h)',
+    bump_2: 'Bump 2 (48h)',
+    bump_3: 'Bump 3 (72h)',
+  }
 
   const totalTokens = Number(kpi.total_tokens || 0)
   const approxCost = (totalTokens / 1_000_000 * 18).toFixed(2)
@@ -147,9 +166,9 @@ async function buildMetricsTab(
     ['Approx AI cost (USD)', `$${approxCost}`],
     ['CRM sync failures', kpi.crm_failures ?? 0],
     [],
-    ['Bump Performance'],
-    ['Bump #', 'Replies after bump'],
-    ...bumpRes.rows.map((r: any) => [`Bump ${r.bump_index}`, r.replies]),
+    ['Replies by Touchpoint'],
+    ['Touchpoint', 'Replies'],
+    ...touchpointRes.rows.map((r: any) => [TOUCHPOINT_LABELS[r.replied_after] ?? r.replied_after, r.replies]),
   ]
 
   await sheets.spreadsheets.values.update({
