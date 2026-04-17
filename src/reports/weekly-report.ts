@@ -122,32 +122,47 @@ async function buildMetricsTab(
   )
   const kpi = kpiRes.rows[0]
 
-  const touchpointRes = await db.query(
-    `SELECT replied_after, COUNT(*) AS replies
+  // Sent counts per touchpoint
+  const sentRes = await db.query(
+    `SELECT
+       COUNT(CASE WHEN first_message_at IS NOT NULL THEN 1 END)   AS first_message,
+       COUNT(CASE WHEN followup1_sent_at IS NOT NULL THEN 1 END)  AS followup_1,
+       COUNT(CASE WHEN followup2_sent_at IS NOT NULL THEN 1 END)  AS followup_2,
+       COUNT(CASE WHEN followup3_sent_at IS NOT NULL THEN 1 END)  AS followup_3,
+       COUNT(CASE WHEN bump_index >= 1 THEN 1 END)                AS bump_1,
+       COUNT(CASE WHEN bump_index >= 2 THEN 1 END)                AS bump_2,
+       COUNT(CASE WHEN bump_index >= 3 THEN 1 END)                AS bump_3
      FROM contacts
-     WHERE client_id=$1 AND first_reply_at IS NOT NULL AND replied_after IS NOT NULL AND created_at >= $2
-     GROUP BY replied_after
-     ORDER BY CASE replied_after
-       WHEN 'first_message' THEN 1
-       WHEN 'followup_1'    THEN 2
-       WHEN 'followup_2'    THEN 3
-       WHEN 'followup_3'    THEN 4
-       WHEN 'bump_1'        THEN 5
-       WHEN 'bump_2'        THEN 6
-       WHEN 'bump_3'        THEN 7
-       ELSE 8 END`,
+     WHERE client_id=$1 AND created_at >= $2`,
     [clientId, periodStartStr]
   )
+  const sent = sentRes.rows[0]
 
-  const TOUCHPOINT_LABELS: Record<string, string> = {
-    first_message: 'First Message',
-    followup_1: 'Follow-Up 1 (Day 7)',
-    followup_2: 'Follow-Up 2 (Day 14)',
-    followup_3: 'Follow-Up 3 (Day 21)',
-    bump_1: 'Bump 1 (24h)',
-    bump_2: 'Bump 2 (48h)',
-    bump_3: 'Bump 3 (72h)',
+  // Reply counts per touchpoint
+  const replyRes = await db.query(
+    `SELECT replied_after, COUNT(*) AS replies
+     FROM contacts
+     WHERE client_id=$1 AND replied_after IS NOT NULL AND created_at >= $2
+     GROUP BY replied_after`,
+    [clientId, periodStartStr]
+  )
+  const replyMap: Record<string, number> = {}
+  for (const r of replyRes.rows) replyMap[r.replied_after] = Number(r.replies)
+
+  function rate(replies: number, sentCount: number) {
+    if (!sentCount) return '—'
+    return `${Math.round(replies / sentCount * 100)}%`
   }
+
+  const touchpoints = [
+    { label: '📩  First Message',           key: 'first_message' },
+    { label: '📅  Follow-Up 1 — Day 7',     key: 'followup_1'    },
+    { label: '📅  Follow-Up 2 — Day 14',    key: 'followup_2'    },
+    { label: '📅  Follow-Up 3 — Day 21',    key: 'followup_3'    },
+    { label: '🔔  Bump 1 — 24h no reply',   key: 'bump_1'        },
+    { label: '🔔  Bump 2 — 48h no reply',   key: 'bump_2'        },
+    { label: '🔔  Bump 3 — 72h no reply',   key: 'bump_3'        },
+  ]
 
   const totalTokens = Number(kpi.total_tokens || 0)
   const approxCost = (totalTokens / 1_000_000 * 18).toFixed(2)
@@ -158,17 +173,20 @@ async function buildMetricsTab(
     [],
     ['Metric', 'Value'],
     [`New contacts this ${periodLabel}`, kpi.total_new],
-    ['Replied', kpi.replied],
-    ['Reply rate', `${kpi.reply_rate_pct ?? 0}%`],
+    ['Overall reply rate', `${kpi.reply_rate_pct ?? 0}%`],
     ['Avg speed-to-lead (mins)', kpi.avg_speed_to_lead_mins ?? '—'],
     ['Avg time to first reply (hrs)', kpi.avg_time_to_reply_hrs ?? '—'],
     ['Total AI tokens used', totalTokens],
     ['Approx AI cost (USD)', `$${approxCost}`],
     ['CRM sync failures', kpi.crm_failures ?? 0],
     [],
-    ['Replies by Touchpoint'],
-    ['Touchpoint', 'Replies'],
-    ...touchpointRes.rows.map((r: any) => [TOUCHPOINT_LABELS[r.replied_after] ?? r.replied_after, r.replies]),
+    ['Touchpoint Reply Rates'],
+    ['Touchpoint', 'Times Sent', 'Replies', 'Reply Rate'],
+    ...touchpoints.map(tp => {
+      const s = Number(sent[tp.key] || 0)
+      const r = replyMap[tp.key] || 0
+      return [tp.label, s, r, rate(r, s)]
+    }),
   ]
 
   await sheets.spreadsheets.values.update({
@@ -207,8 +225,10 @@ async function buildMetricsTab(
             fields: 'userEnteredFormat(backgroundColor,textFormat)'
           }
         },
-        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 280 }, fields: 'pixelSize' } },
-        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 180 }, fields: 'pixelSize' } },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 260 }, fields: 'pixelSize' } },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 120 }, fields: 'pixelSize' } },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 110 }, fields: 'pixelSize' } },
       ]
     }
   })
