@@ -79,6 +79,122 @@ function getAuth() {
   return auth
 }
 
+async function buildMetricsTab(
+  sheets: any,
+  spreadsheetId: string,
+  clientId: string,
+  tabTitle: string,
+  days: number,
+  periodLabel: string
+) {
+  const metaRes = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties)' })
+  const existing = metaRes.data.sheets?.find((s: any) => s.properties?.title === tabTitle)
+  let sheetId: number
+
+  if (existing) {
+    sheetId = existing.properties!.sheetId!
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `'${tabTitle}'` })
+  } else {
+    const addRes = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: tabTitle } } }] }
+    })
+    sheetId = addRes.data.replies![0].addSheet!.properties!.sheetId!
+  }
+
+  const periodStart = new Date()
+  periodStart.setDate(periodStart.getDate() - days)
+  const periodStartStr = periodStart.toISOString()
+  const dateRange = `${periodStart.toLocaleDateString('en-ZA')} – ${new Date().toLocaleDateString('en-ZA')}`
+
+  const kpiRes = await db.query(
+    `SELECT
+       COUNT(*)                                                                                 AS total_new,
+       COUNT(first_reply_at)                                                                    AS replied,
+       ROUND(COUNT(first_reply_at)::numeric / NULLIF(COUNT(*),0) * 100, 1)                     AS reply_rate_pct,
+       ROUND(AVG(EXTRACT(EPOCH FROM (first_message_at - webhook_received_at))/60)::numeric, 1)  AS avg_speed_to_lead_mins,
+       ROUND(AVG(EXTRACT(EPOCH FROM (first_reply_at - first_message_at))/3600)::numeric, 1)     AS avg_time_to_reply_hrs,
+       SUM(total_tokens_used)                                                                   AS total_tokens,
+       SUM(crm_sync_failures)                                                                   AS crm_failures
+     FROM contacts
+     WHERE client_id=$1 AND created_at >= $2`,
+    [clientId, periodStartStr]
+  )
+  const kpi = kpiRes.rows[0]
+
+  const bumpRes = await db.query(
+    `SELECT bump_index, COUNT(*) AS replies
+     FROM contacts
+     WHERE client_id=$1 AND first_reply_at IS NOT NULL AND bump_index > 0 AND created_at >= $2
+     GROUP BY bump_index ORDER BY bump_index`,
+    [clientId, periodStartStr]
+  )
+
+  const totalTokens = Number(kpi.total_tokens || 0)
+  const approxCost = (totalTokens / 1_000_000 * 18).toFixed(2)
+  const periodName = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1)
+
+  const rows: any[][] = [
+    [`${periodName} Performance Metrics — ${dateRange}`],
+    [],
+    ['Metric', 'Value'],
+    [`New contacts this ${periodLabel}`, kpi.total_new],
+    ['Replied', kpi.replied],
+    ['Reply rate', `${kpi.reply_rate_pct ?? 0}%`],
+    ['Avg speed-to-lead (mins)', kpi.avg_speed_to_lead_mins ?? '—'],
+    ['Avg time to first reply (hrs)', kpi.avg_time_to_reply_hrs ?? '—'],
+    ['Total AI tokens used', totalTokens],
+    ['Approx AI cost (USD)', `$${approxCost}`],
+    ['CRM sync failures', kpi.crm_failures ?? 0],
+    [],
+    ['Bump Performance'],
+    ['Bump #', 'Replies after bump'],
+    ...bumpRes.rows.map((r: any) => [`Bump ${r.bump_index}`, r.replies]),
+  ]
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${tabTitle}'!A1`,
+    valueInputOption: 'RAW',
+    requestBody: { values: rows }
+  })
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.102, green: 0.102, blue: 0.180 },
+                textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 13 },
+                verticalAlignment: 'MIDDLE',
+              }
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment)'
+          }
+        },
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 2, endRowIndex: 3 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.2, green: 0.2, blue: 0.35 },
+                textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true },
+              }
+            },
+            fields: 'userEnteredFormat(backgroundColor,textFormat)'
+          }
+        },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 280 }, fields: 'pixelSize' } },
+        { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 180 }, fields: 'pixelSize' } },
+      ]
+    }
+  })
+}
+
 export async function buildWeeklyReport(): Promise<string> {
   const auth = getAuth()
   const sheets = google.sheets({ version: 'v4', auth })
@@ -288,117 +404,16 @@ export async function buildWeeklyReport(): Promise<string> {
     // Apply all formatting for this tab to its master spreadsheet
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: requests.splice(0) } })
 
-    // ── Weekly Metrics tab ───────────────────────────────────
-    const metricsTitle = 'Weekly Metrics'
-    const metaMeta = await sheets.spreadsheets.get({ spreadsheetId: masterId, fields: 'sheets(properties)' })
-    const existingMetrics = metaMeta.data.sheets?.find(s => s.properties?.title === metricsTitle)
-    let metricsSheetId: number
-
-    if (existingMetrics) {
-      metricsSheetId = existingMetrics.properties!.sheetId!
-      await sheets.spreadsheets.values.clear({ spreadsheetId: masterId, range: `'${metricsTitle}'` })
-    } else {
-      const addMetrics = await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: masterId,
-        requestBody: { requests: [{ addSheet: { properties: { title: metricsTitle } } }] }
-      })
-      metricsSheetId = addMetrics.data.replies![0].addSheet!.properties!.sheetId!
-    }
-
-    const weekStart = new Date()
-    weekStart.setDate(weekStart.getDate() - 7)
-    const weekStartStr = weekStart.toISOString()
-
-    const kpiRes = await db.query(
-      `SELECT
-         COUNT(*)                                                                              AS total_new,
-         COUNT(first_reply_at)                                                                 AS replied,
-         ROUND(COUNT(first_reply_at)::numeric / NULLIF(COUNT(*),0) * 100, 1)                  AS reply_rate_pct,
-         ROUND(AVG(EXTRACT(EPOCH FROM (first_message_at - webhook_received_at))/60)::numeric, 1) AS avg_speed_to_lead_mins,
-         ROUND(AVG(EXTRACT(EPOCH FROM (first_reply_at - first_message_at))/3600)::numeric, 1)    AS avg_time_to_reply_hrs,
-         SUM(total_tokens_used)                                                                AS total_tokens,
-         SUM(crm_sync_failures)                                                                AS crm_failures
-       FROM contacts
-       WHERE client_id=$1 AND created_at >= $2`,
-      [clientRow.id, weekStartStr]
-    )
-    const kpi = kpiRes.rows[0]
-
-    const bumpRes = await db.query(
-      `SELECT bump_index, COUNT(*) AS replies
-       FROM contacts
-       WHERE client_id=$1 AND first_reply_at IS NOT NULL AND bump_index > 0 AND created_at >= $2
-       GROUP BY bump_index ORDER BY bump_index`,
-      [clientRow.id, weekStartStr]
-    )
-
-    const dateRange = `${weekStart.toLocaleDateString('en-ZA')} – ${new Date().toLocaleDateString('en-ZA')}`
-    const totalTokens = Number(kpi.total_tokens || 0)
-    const approxCost = (totalTokens / 1_000_000 * 18).toFixed(2)
-
-    const metricsRows: any[][] = [
-      [`Weekly Performance Metrics — ${dateRange}`],
-      [],
-      ['Metric', 'Value'],
-      ['New contacts this week', kpi.total_new],
-      ['Replied', kpi.replied],
-      ['Reply rate', `${kpi.reply_rate_pct ?? 0}%`],
-      ['Avg speed-to-lead (mins)', kpi.avg_speed_to_lead_mins ?? '—'],
-      ['Avg time to first reply (hrs)', kpi.avg_time_to_reply_hrs ?? '—'],
-      ['Total AI tokens used', totalTokens],
-      ['Approx AI cost (USD)', `$${approxCost}`],
-      ['CRM sync failures', kpi.crm_failures ?? 0],
-      [],
-      ['Bump Performance'],
-      ['Bump #', 'Replies after bump'],
-      ...bumpRes.rows.map(r => [`Bump ${r.bump_index}`, r.replies]),
+    // ── Metrics tabs (Weekly / Monthly / Yearly) ────────────
+    const periods = [
+      { title: 'Weekly Metrics',  days: 7,   label: 'week'  },
+      { title: 'Monthly Metrics', days: 30,  label: 'month' },
+      { title: 'Yearly Metrics',  days: 365, label: 'year'  },
     ]
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: masterId,
-      range: `'${metricsTitle}'!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: metricsRows }
-    })
-
-    const metricsRequests: any[] = []
-
-    // Title row formatting
-    metricsRequests.push({
-      repeatCell: {
-        range: { sheetId: metricsSheetId, startRowIndex: 0, endRowIndex: 1 },
-        cell: {
-          userEnteredFormat: {
-            backgroundColor: { red: 0.102, green: 0.102, blue: 0.180 },
-            textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 13 },
-            verticalAlignment: 'MIDDLE',
-          }
-        },
-        fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment)'
-      }
-    })
-
-    // KPI header row (row 3, index 2)
-    metricsRequests.push({
-      repeatCell: {
-        range: { sheetId: metricsSheetId, startRowIndex: 2, endRowIndex: 3 },
-        cell: {
-          userEnteredFormat: {
-            backgroundColor: { red: 0.2, green: 0.2, blue: 0.35 },
-            textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true },
-          }
-        },
-        fields: 'userEnteredFormat(backgroundColor,textFormat)'
-      }
-    })
-
-    // Column widths
-    metricsRequests.push(
-      { updateDimensionProperties: { range: { sheetId: metricsSheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 280 }, fields: 'pixelSize' } },
-      { updateDimensionProperties: { range: { sheetId: metricsSheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 2 }, properties: { pixelSize: 180 }, fields: 'pixelSize' } },
-    )
-
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: metricsRequests } })
+    for (const period of periods) {
+      await buildMetricsTab(sheets, masterId, clientRow.id, period.title, period.days, period.label)
+    }
   }
 
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
