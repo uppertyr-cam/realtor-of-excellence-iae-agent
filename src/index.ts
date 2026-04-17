@@ -119,6 +119,41 @@ app.post('/webhook/whatsapp', async (req, res) => {
     const { notifyStageAgent } = await import('./workflows/inbound-reply-handler')
     const { downloadWhatsAppAudio, transcribeAudio } = await import('./channels/transcription')
 
+    // Agent detection — only intercept if this number is a registered agent AND
+    // either there's a contact waiting for an answer, or the message is "APPROVE".
+    // This allows the same number to act as both lead and agent in tests.
+    if (msg.type === 'text') {
+      const earlyText = msg.text?.body || ''
+      const isApprove = earlyText.trim().toUpperCase() === 'APPROVE'
+      if (earlyText) {
+        const agentCheck = await db.query(
+          `SELECT c.id FROM clients c
+           WHERE EXISTS (
+             SELECT 1 FROM jsonb_each(COALESCE(c.stage_agents, '{}'::jsonb)) kv
+             WHERE kv.value->>'target' = $1
+           )
+           AND (
+             $2
+             OR EXISTS (
+               SELECT 1 FROM contacts ct
+               WHERE ct.client_id = c.id
+                 AND (
+                   'awaiting_agent_answer' = ANY(ct.tags)
+                   OR 'awaiting_faq_approval' = ANY(ct.tags)
+                 )
+             )
+           )
+           LIMIT 1`,
+          [phone.replace(/^\+/, ''), isApprove]
+        )
+        if (agentCheck.rows.length > 0) {
+          const { handleAgentReply } = await import('./workflows/agent-reply-handler')
+          await handleAgentReply({ senderPhone: phone, message: earlyText, clientId: agentCheck.rows[0].id })
+          return
+        }
+      }
+    }
+
     const contactRes = await db.query(
       `SELECT * FROM contacts WHERE phone_number LIKE $1 LIMIT 1`,
       [`%${phone.replace(/^\+/, '')}%`]
@@ -280,6 +315,7 @@ app.post('/admin/clients', requireAdminSecret, async (req, res) => {
       if (c.openai_api_key !== undefined) { updates.push(`openai_api_key = $${paramIndex++}`); params.push(c.openai_api_key) }
       if (c.stage_agents !== undefined) { updates.push(`stage_agents = $${paramIndex++}`); params.push(JSON.stringify(c.stage_agents)) }
       if (c.wa_access_token !== undefined) { updates.push(`wa_access_token = $${paramIndex++}`); params.push(c.wa_access_token) }
+      if (c.wa_phone_number_id !== undefined) { updates.push(`wa_phone_number_id = $${paramIndex++}`); params.push(c.wa_phone_number_id) }
 
       if (updates.length > 0) {
         updates.push(`updated_at = NOW()`)
