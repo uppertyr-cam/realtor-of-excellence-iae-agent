@@ -94,6 +94,7 @@ async function processBufferedMessages(contactId: string, channel: string) {
       `UPDATE contacts SET
          tags=array_append(tags,'reply_generating'),
          last_reply_at=NOW(),
+         first_reply_at=COALESCE(first_reply_at, NOW()),
          lead_response=$1,
          updated_at=NOW()
        WHERE id=$2`,
@@ -232,7 +233,7 @@ async function triggerAIGeneration(
   const contactId = contact.id
 
   try {
-    const { text: responseText, keyword, scheduledAt, agentQuestion } = await generateAIResponse({
+    const { text: responseText, keyword, scheduledAt, agentQuestion, tokensUsed } = await generateAIResponse({
       promptFilePath:  config.prompt_file_path,
       chatHistory,
       leadData,
@@ -282,11 +283,13 @@ async function triggerAIGeneration(
       [contactId, config.id, responseText, contact.channel || config.channel]
     )
 
-    // Update AI memory with the response
+    // Update AI memory + accumulate token usage
     const updatedMemory = chatHistory + `\nAI: ${responseText}`
     await db.query(
-      `UPDATE contacts SET ai_memory=$1, workflow_stage='active' WHERE id=$2`,
-      [updatedMemory, contactId]
+      `UPDATE contacts SET ai_memory=$1, workflow_stage='active',
+         total_tokens_used=total_tokens_used+$3
+       WHERE id=$2`,
+      [updatedMemory, contactId, tokensUsed]
     )
 
     logger.info('AI response stored — triggering Workflow 02', { contactId, keyword })

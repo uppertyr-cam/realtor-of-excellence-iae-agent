@@ -40,6 +40,12 @@ export interface Contact {
   lead_response: string | null
   pending_question: string | null
   pending_answer: string | null
+  webhook_received_at: Date | null
+  first_reply_at: Date | null
+  total_tokens_used: number
+  last_delivery_status: string | null
+  last_read_at: Date | null
+  crm_sync_failures: number
   created_at: Date
   updated_at: Date
 }
@@ -89,6 +95,7 @@ export interface ClientConfig {
   openai_api_key: string | null
   stage_agents: Record<string, { channel: string; target: string }> | null
   agent_question_template: string | null
+  agent_name: string | null
 }
 
 // ─── SEND RESULT ─────────────────────────────────────────────

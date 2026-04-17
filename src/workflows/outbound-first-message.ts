@@ -16,11 +16,6 @@ import { isWithinWorkingHours } from '../utils/working-hours'
 import { logger } from '../utils/logger'
 import type { Contact, InboundWebhook, SendResult } from '../utils/types'
 
-// ─── DRIP STATE ──────────────────────────────────────────────
-// Per-client daily counters stored in memory
-// (for production: move to Redis or Postgres)
-const dailyCounts = new Map<string, { count: number; date: string }>()
-const lastSentAt = new Map<string, number>() // client_id → timestamp
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleCrmWebhook(rawPayload: any, crmType: string) {
@@ -57,8 +52,9 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
   await db.query(
     `INSERT INTO contacts (
        id, client_id, crm_source, crm_callback_url,
-       phone_number, first_name, last_name, email, workflow_stage
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
+       phone_number, first_name, last_name, email, workflow_stage,
+       webhook_received_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW())
      ON CONFLICT (id) DO UPDATE SET
        crm_callback_url = EXCLUDED.crm_callback_url,
        workflow_stage = 'pending',
@@ -165,15 +161,19 @@ export async function processDripQueue() {
     // ── Working hours check ─────────────────────────────────
     if (!isWithinWorkingHours(config)) continue
 
-    // ── Daily limit check ───────────────────────────────────
+    // ── Daily limit + interval check (DB-persisted) ─────────
     const today = new Date().toISOString().split('T')[0]
-    const daily = dailyCounts.get(config.id)
-    if (daily?.date === today && daily.count >= config.daily_send_limit) continue
-
-    // ── Interval check (1 per 10 min) ──────────────────────
-    const last = lastSentAt.get(config.id) || 0
+    const rateRes = await db.query(
+      `SELECT daily_send_count, daily_send_date, last_sent_at FROM clients WHERE id=$1`,
+      [config.id]
+    )
+    const rate = rateRes.rows[0]
+    const todayCount = rate.daily_send_date && new Date(rate.daily_send_date).toISOString().split('T')[0] === today
+      ? rate.daily_send_count : 0
+    if (todayCount >= config.daily_send_limit) continue
     const intervalMs = config.send_interval_minutes * 60_000
-    if (Date.now() - last < intervalMs) continue
+    const lastMs = rate.last_sent_at ? new Date(rate.last_sent_at).getTime() : 0
+    if (Date.now() - lastMs < intervalMs) continue
 
     // ── Get next contact in queue ───────────────────────────
     const queueRes = await db.query(
@@ -191,10 +191,15 @@ export async function processDripQueue() {
     const job = queueRes.rows[0]
     await sendFirstMessage(job, config)
 
-    // Update counters
-    const count = (daily?.date === today ? daily.count : 0) + 1
-    dailyCounts.set(config.id, { count, date: today })
-    lastSentAt.set(config.id, Date.now())
+    // Persist rate limit counters to DB
+    await db.query(
+      `UPDATE clients SET
+         daily_send_count = CASE WHEN daily_send_date = CURRENT_DATE THEN daily_send_count + 1 ELSE 1 END,
+         daily_send_date = CURRENT_DATE,
+         last_sent_at = NOW()
+       WHERE id=$1`,
+      [config.id]
+    )
   }
 }
 

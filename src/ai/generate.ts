@@ -63,7 +63,7 @@ export async function generateAIResponse(params: {
   leadData: Record<string, string>
   latestMessage: string
   clientName: string
-}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null; agentQuestion: string | null }> {
+}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null; agentQuestion: string | null; tokensUsed: number }> {
   // Read the prompt file fresh every time
   // This means you can edit the file and it takes effect immediately
   const promptPath = path.resolve(process.cwd(), params.promptFilePath)
@@ -150,8 +150,9 @@ ${params.latestMessage}
       ) as any | undefined
       const agentQuestion: string | null = askAgentUse?.input?.question ?? null
 
-      logger.info('AI response generated', { length: text.length, keyword, scheduledAt, agentQuestion: !!agentQuestion })
-      return { text, keyword, scheduledAt, agentQuestion }
+      const tokensUsed = response.usage.input_tokens + response.usage.output_tokens
+      logger.info('AI response generated', { length: text.length, keyword, scheduledAt, agentQuestion: !!agentQuestion, tokensUsed })
+      return { text, keyword, scheduledAt, agentQuestion, tokensUsed }
     } catch (err: any) {
       lastError = err
       logger.warn('AI generation attempt failed', { attempt, error: err.message })
@@ -188,6 +189,90 @@ export async function generateContactNote(chatHistory: string): Promise<string> 
     .map((b) => (b as any).text)
     .join('')
     .trim()
+}
+
+export async function generateBumpMessage(params: {
+  bumpNumber: number
+  conversationHistory: string
+}): Promise<string> {
+  const promptPath = path.resolve(process.cwd(), 'prompts/bumps.txt')
+  let promptTemplate: string
+  try {
+    promptTemplate = fs.readFileSync(promptPath, 'utf8')
+  } catch (err) {
+    logger.error('Could not read bumps prompt', { path: promptPath })
+    throw new Error('Bumps prompt file not found')
+  }
+
+  const prompt = promptTemplate
+    .replace(/{{bump_number}}/g, String(params.bumpNumber))
+    .replace(/{{conversation_history}}/g, params.conversationHistory || 'No previous conversation.')
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await Promise.race([
+        client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI generation timeout')), TIMEOUT_MS)
+        ),
+      ])
+      return response.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as any).text)
+        .join('')
+        .trim()
+    } catch (err: any) {
+      logger.warn('generateBumpMessage attempt failed', { attempt, error: err.message })
+      if (attempt < MAX_RETRIES) await sleep(1000 * Math.pow(2, attempt - 1))
+      else throw err
+    }
+  }
+  throw new Error('generateBumpMessage failed after all retries')
+}
+
+export async function generateReachBackOutMessage(params: {
+  conversationHistory: string
+}): Promise<string> {
+  const promptPath = path.resolve(process.cwd(), 'prompts/reach-back-out.txt')
+  let promptTemplate: string
+  try {
+    promptTemplate = fs.readFileSync(promptPath, 'utf8')
+  } catch (err) {
+    logger.error('Could not read reach-back-out prompt', { path: promptPath })
+    throw new Error('Reach-back-out prompt file not found')
+  }
+
+  const prompt = promptTemplate
+    .replace(/{{conversation_history}}/g, params.conversationHistory || 'No previous conversation.')
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await Promise.race([
+        client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 150,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI generation timeout')), TIMEOUT_MS)
+        ),
+      ])
+      return response.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as any).text)
+        .join('')
+        .trim()
+    } catch (err: any) {
+      logger.warn('generateReachBackOutMessage attempt failed', { attempt, error: err.message })
+      if (attempt < MAX_RETRIES) await sleep(1000 * Math.pow(2, attempt - 1))
+      else throw err
+    }
+  }
+  throw new Error('generateReachBackOutMessage failed after all retries')
 }
 
 function sleep(ms: number) {

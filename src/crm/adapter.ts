@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { CrmUpdate, ClientConfig } from '../utils/types'
 import { logger } from '../utils/logger'
+import { db } from '../db/client'
 
 export async function writeToCrm(
   update: CrmUpdate,
@@ -29,6 +30,10 @@ export async function writeToCrm(
     logger.info('CRM updated', { contact_id: update.contact_id, crm: config.crm_type })
   } catch (err: any) {
     logger.error('CRM write failed', { contact_id: update.contact_id, error: err.message })
+    db.query(
+      `UPDATE contacts SET crm_sync_failures = crm_sync_failures + 1 WHERE id=$1`,
+      [update.contact_id]
+    ).catch(() => {})
     // Non-fatal — log and continue
   }
 }

@@ -264,4 +264,35 @@ BEGIN
   ) THEN
     ALTER TABLE clients ADD COLUMN agent_question_template TEXT;
   END IF;
+
+  -- Agent name used in reach-back-out WA template {{2}}
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='agent_name'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN agent_name TEXT;
+  END IF;
+
+  -- Tracking improvements: webhook timing, reply timing, token usage, delivery receipts, CRM failures
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='webhook_received_at'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN webhook_received_at TIMESTAMPTZ;
+    ALTER TABLE contacts ADD COLUMN first_reply_at TIMESTAMPTZ;
+    ALTER TABLE contacts ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE contacts ADD COLUMN last_delivery_status TEXT;
+    ALTER TABLE contacts ADD COLUMN last_read_at TIMESTAMPTZ;
+    ALTER TABLE contacts ADD COLUMN crm_sync_failures INTEGER NOT NULL DEFAULT 0;
+  END IF;
+
+  -- Rate limiting persistence (replaces in-memory Maps)
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='daily_send_count'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN daily_send_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE clients ADD COLUMN daily_send_date DATE;
+    ALTER TABLE clients ADD COLUMN last_sent_at TIMESTAMPTZ;
+  END IF;
 END $$;

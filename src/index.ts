@@ -105,7 +105,26 @@ app.post('/webhook/whatsapp', async (req, res) => {
     const changes = entry?.changes?.[0]
     const value = changes?.value
 
-    if (!value?.messages?.length) return // Not a message event (e.g. status update)
+    // Handle delivery/read status callbacks
+    if (value?.statuses?.length && !value?.messages?.length) {
+      const status = value.statuses[0]
+      const recipientPhone: string = status.recipient_id || ''
+      const deliveryStatus: string = status.status || ''
+      if (recipientPhone && ['sent', 'delivered', 'read', 'failed'].includes(deliveryStatus)) {
+        const { db: statusDb } = await import('./db/client')
+        statusDb.query(
+          `UPDATE contacts SET
+             last_delivery_status=$1,
+             last_read_at=CASE WHEN $1='read' THEN NOW() ELSE last_read_at END,
+             updated_at=NOW()
+           WHERE phone_number LIKE $2`,
+          [deliveryStatus, `%${recipientPhone}%`]
+        ).catch(() => {})
+      }
+      return
+    }
+
+    if (!value?.messages?.length) return // Not a message event
 
     const msg = value.messages[0]
     const contact = value.contacts?.[0]
