@@ -549,8 +549,8 @@ export async function buildYearlyMetrics() {
   const clientsRes = await db.query(`SELECT id FROM clients ORDER BY name`)
 
   const now = new Date()
-  const yearEnd = new Date(now.getFullYear(), 0, 1)       // Jan 1st of current year
-  const yearStart = new Date(now.getFullYear() - 1, 0, 1) // Jan 1st of previous year
+  const yearStart = new Date(now.getFullYear(), 0, 1)     // Jan 1st of current year
+  const yearEnd = now                                      // now (year-to-date)
 
   for (const clientRow of clientsRes.rows) {
     const freshRes = await db.query(`SELECT dashboard_sheet_id FROM clients WHERE id=$1`, [clientRow.id])
