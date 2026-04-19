@@ -347,6 +347,7 @@ app.post('/admin/clients', requireAdminSecret, async (req, res) => {
       if (c.agent_name !== undefined) { updates.push(`agent_name = $${paramIndex++}`); params.push(c.agent_name) }
       if (c.agent_question_template !== undefined) { updates.push(`agent_question_template = $${paramIndex++}`); params.push(c.agent_question_template) }
       if (c.test_phone_numbers !== undefined) { updates.push(`test_phone_numbers = $${paramIndex++}`); params.push(c.test_phone_numbers) }
+      if (c.workflow_prompts !== undefined) { updates.push(`workflow_prompts = $${paramIndex++}`); params.push(JSON.stringify(c.workflow_prompts)) }
 
       if (updates.length > 0) {
         updates.push(`updated_at = NOW()`)

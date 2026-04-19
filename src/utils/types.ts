@@ -100,6 +100,7 @@ export interface ClientConfig {
   agent_question_template: string | null
   agent_name: string | null
   test_phone_numbers: string[]
+  workflow_prompts: Record<string, string>
 }
 
 // ─── SEND RESULT ─────────────────────────────────────────────

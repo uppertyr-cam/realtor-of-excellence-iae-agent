@@ -243,8 +243,9 @@ async function triggerAIGeneration(
   const contactId = contact.id
 
   try {
+    const resolvedPromptPath = resolvePromptPath(contact.tags, config)
     const { text: responseText, keyword, scheduledAt, agentQuestion, tokensUsed } = await generateAIResponse({
-      promptFilePath:  config.prompt_file_path,
+      promptFilePath:  resolvedPromptPath,
       chatHistory,
       leadData,
       latestMessage,
@@ -321,6 +322,17 @@ async function triggerAIGeneration(
       config, contact.crm_callback_url
     )
   }
+}
+
+// ─── PROMPT RESOLVER ─────────────────────────────────────────
+// Picks the first matching prompt from workflow_prompts based on contact tags.
+// Falls back to prompt_file_path if no tag matches or map is empty.
+function resolvePromptPath(tags: string[], config: any): string {
+  const map: Record<string, string> = config.workflow_prompts || {}
+  for (const tag of (tags || [])) {
+    if (map[tag]) return map[tag]
+  }
+  return config.prompt_file_path
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────

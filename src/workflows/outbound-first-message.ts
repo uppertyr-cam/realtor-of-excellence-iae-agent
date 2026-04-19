@@ -53,12 +53,13 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
     `INSERT INTO contacts (
        id, client_id, crm_source, crm_callback_url,
        phone_number, first_name, last_name, email, workflow_stage,
-       webhook_received_at, assigned_to
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9)
+       webhook_received_at, assigned_to, tags
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9,ARRAY['ai_database_reactivation'])
      ON CONFLICT (id) DO UPDATE SET
        crm_callback_url = EXCLUDED.crm_callback_url,
        workflow_stage = 'pending',
        assigned_to = EXCLUDED.assigned_to,
+       tags = array_append(contacts.tags, 'ai_database_reactivation'),
        updated_at = NOW()`,
     [
       webhook.contact_id, webhook.client_id, webhook.crm_type,
@@ -306,7 +307,7 @@ async function sendFirstMessage(job: any, config: any) {
   await db.query(
     `UPDATE contacts SET
        workflow_stage='active',
-       tags=array_append(array_append(tags,'first_message_sent'),'database_reactivation'),
+       tags=array_append(array_append(array_append(tags,'first_message_sent'),'database_reactivation'),'ai_database_reactivation'),
        first_message_sent=$1,
        first_message_at=$2,
        ai_memory=$4,
@@ -331,7 +332,7 @@ async function sendFirstMessage(job: any, config: any) {
   await writeToCrm(
     {
       contact_id: contact.id,
-      tags_add: ['first_message_sent', 'database_reactivation', 'follow_ups_scheduled'],
+      tags_add: ['first_message_sent', 'database_reactivation', 'ai_database_reactivation', 'follow_ups_scheduled'],
       note: `IAE: First message sent via ${channel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}\nCRM Source: ${contact.crm_source}`,
       fields: {
         first_message_sent: message,

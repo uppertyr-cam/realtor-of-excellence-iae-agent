@@ -318,4 +318,12 @@ BEGIN
   ) THEN
     ALTER TABLE contacts ADD COLUMN assigned_to TEXT;
   END IF;
+
+  -- Tag-to-prompt routing: maps workflow tag → prompt file path
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='workflow_prompts'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN workflow_prompts JSONB DEFAULT '{}'::jsonb;
+  END IF;
 END $$;
