@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
+import axios from 'axios'
 import { handleCrmWebhook, forceSendContact } from './workflows/outbound-first-message'
 import { sendWeeklyReport } from './reports/weekly-report'
 import { updateDashboard } from './reports/dashboard'
@@ -442,6 +443,72 @@ app.post('/admin/dashboard/refresh/:clientId', requireAdminSecret, async (req, r
     await updateDashboard(req.params.clientId)
     res.json({ success: true, message: 'Dashboard refreshed' })
   } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Fetch contact(s) from FUB and feed into Workflow 00
+// Body: { search?, contact_id?, limit?, client_id? }
+// - search: find by name/email (triggers first match)
+// - contact_id: fetch exact FUB person ID
+// - limit: pull latest N contacts (default 1, max 100)
+// - client_id: defaults to "realtor_of_excellence"
+app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
+  const client_id = req.body.client_id || 'realtor_of_excellence'
+  const { contact_id, search, dry_run } = req.body
+  const limit = Math.min(parseInt(req.body.limit) || 1, 100)
+
+  try {
+    const { getClientConfig } = await import('./config/client-config')
+    const config = await getClientConfig(client_id)
+    if (!config.crm_api_key) return res.status(400).json({ error: 'No crm_api_key on client' })
+
+    const base = config.crm_base_url || 'https://api.followupboss.com/v1'
+    const auth = { username: config.crm_api_key, password: '' }
+
+    let people: any[] = []
+
+    if (contact_id) {
+      const r = await axios.get(`${base}/people/${contact_id}`, { auth })
+      people = [r.data]
+    } else if (search) {
+      const r = await axios.get(`${base}/people`, { auth, params: { q: search, limit: 1 } })
+      people = r.data?.people || []
+      if (!people.length) return res.status(404).json({ error: `No contact found for: ${search}` })
+    } else {
+      const r = await axios.get(`${base}/people`, { auth, params: { limit, sort: '-created' } })
+      people = r.data?.people || []
+    }
+
+    const triggered: { contact_id: string; name: string; phone: string }[] = []
+    const skipped: { contact_id: string; reason: string }[] = []
+
+    for (const person of people) {
+      const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+      if (!phones.length) {
+        skipped.push({ contact_id: person.id?.toString(), reason: 'no phone number' })
+        continue
+      }
+      const payload = {
+        contact_id:    person.id?.toString(),
+        phone_number:  phones[0],
+        phone_numbers: phones.length > 1 ? phones : undefined,
+        first_name:    person.firstName || '',
+        last_name:     person.lastName,
+        email:         person.emails?.[0]?.value,
+        client_id,
+      }
+      triggered.push({ contact_id: payload.contact_id!, name: `${payload.first_name} ${payload.last_name || ''}`.trim(), phone: payload.phone_number })
+      if (!dry_run) {
+        handleCrmWebhook(payload, 'followupboss').catch((err) => {
+          logger.error('trigger-contact workflow error', { error: err.message, contact_id: payload.contact_id })
+        })
+      }
+    }
+
+    res.json({ dry_run: !!dry_run, triggered, skipped })
+  } catch (err: any) {
+    logger.error('trigger-contact error', { error: err.message })
     res.status(500).json({ error: err.message })
   }
 })
