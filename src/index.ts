@@ -338,6 +338,15 @@ app.post('/admin/clients', requireAdminSecret, async (req, res) => {
       if (c.wa_phone_number_id !== undefined) { updates.push(`wa_phone_number_id = $${paramIndex++}`); params.push(c.wa_phone_number_id) }
       if (c.crm_type !== undefined) { updates.push(`crm_type = $${paramIndex++}`); params.push(c.crm_type) }
       if (c.crm_api_key !== undefined) { updates.push(`crm_api_key = $${paramIndex++}`); params.push(c.crm_api_key) }
+      if (c.wa_first_message_template_name !== undefined) { updates.push(`wa_first_message_template_name = $${paramIndex++}`); params.push(c.wa_first_message_template_name) }
+      if (c.wa_followup1_template_name !== undefined) { updates.push(`wa_followup1_template_name = $${paramIndex++}`); params.push(c.wa_followup1_template_name) }
+      if (c.wa_followup2_template_name !== undefined) { updates.push(`wa_followup2_template_name = $${paramIndex++}`); params.push(c.wa_followup2_template_name) }
+      if (c.wa_followup3_template_name !== undefined) { updates.push(`wa_followup3_template_name = $${paramIndex++}`); params.push(c.wa_followup3_template_name) }
+      if (c.wa_bump_template_names !== undefined) { updates.push(`wa_bump_template_names = $${paramIndex++}`); params.push(JSON.stringify(c.wa_bump_template_names)) }
+      if (c.wa_reach_back_out_template_name !== undefined) { updates.push(`wa_reach_back_out_template_name = $${paramIndex++}`); params.push(c.wa_reach_back_out_template_name) }
+      if (c.agent_name !== undefined) { updates.push(`agent_name = $${paramIndex++}`); params.push(c.agent_name) }
+      if (c.agent_question_template !== undefined) { updates.push(`agent_question_template = $${paramIndex++}`); params.push(c.agent_question_template) }
+      if (c.test_phone_numbers !== undefined) { updates.push(`test_phone_numbers = $${paramIndex++}`); params.push(c.test_phone_numbers) }
 
       if (updates.length > 0) {
         updates.push(`updated_at = NOW()`)
