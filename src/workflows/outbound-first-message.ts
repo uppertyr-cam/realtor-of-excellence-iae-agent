@@ -53,16 +53,18 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
     `INSERT INTO contacts (
        id, client_id, crm_source, crm_callback_url,
        phone_number, first_name, last_name, email, workflow_stage,
-       webhook_received_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW())
+       webhook_received_at, assigned_to
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9)
      ON CONFLICT (id) DO UPDATE SET
        crm_callback_url = EXCLUDED.crm_callback_url,
        workflow_stage = 'pending',
+       assigned_to = EXCLUDED.assigned_to,
        updated_at = NOW()`,
     [
       webhook.contact_id, webhook.client_id, webhook.crm_type,
       webhook.crm_callback_url, webhook.phone_number,
       webhook.first_name, webhook.last_name, webhook.email,
+      webhook.assigned_to || null,
     ]
   )
 

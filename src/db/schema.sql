@@ -303,4 +303,11 @@ BEGIN
     ALTER TABLE clients ADD COLUMN daily_send_date DATE;
     ALTER TABLE clients ADD COLUMN last_sent_at TIMESTAMPTZ;
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='assigned_to'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN assigned_to TEXT;
+  END IF;
 END $$;

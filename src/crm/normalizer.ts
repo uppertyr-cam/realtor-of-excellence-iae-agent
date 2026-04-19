@@ -74,6 +74,7 @@ function normalizeFollowUpBoss(raw: any): InboundWebhook {
     client_id:        raw.client_id,
     crm_type:         'followupboss',
     crm_callback_url: raw.crm_callback_url,
+    assigned_to:      raw.assignedTo || undefined,
   }
 }
 

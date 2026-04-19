@@ -161,6 +161,7 @@ async function processBufferedMessages(contactId: string, channel: string) {
       first_message:     contact.first_message_sent || '',
       conversation_history: newMemory,
       client_name:       config.name,
+      assigned_to:       contact.assigned_to || 'your assigned agent',
     }
 
     // ── Step 12: Route based on stage ────────────────────────

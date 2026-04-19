@@ -497,6 +497,7 @@ app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
         last_name:     person.lastName,
         email:         person.emails?.[0]?.value,
         client_id,
+        assigned_to:   person.assignedTo || undefined,
       }
       triggered.push({ contact_id: payload.contact_id!, name: `${payload.first_name} ${payload.last_name || ''}`.trim(), phone: payload.phone_number, ...(dry_run ? { raw: person } : {}) })
       if (!dry_run) {

@@ -9,6 +9,7 @@ export interface InboundWebhook {
   client_id: string
   crm_type: string
   crm_callback_url: string
+  assigned_to?: string
 }
 
 // ─── NORMALISED CONTACT ───────────────────────────────────────
@@ -47,6 +48,7 @@ export interface Contact {
   last_delivery_status: string | null
   last_read_at: Date | null
   crm_sync_failures: number
+  assigned_to: string | null
   created_at: Date
   updated_at: Date
 }
