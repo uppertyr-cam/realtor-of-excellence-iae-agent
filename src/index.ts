@@ -480,7 +480,7 @@ app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
       people = r.data?.people || []
     }
 
-    const triggered: { contact_id: string; name: string; phone: string }[] = []
+    const triggered: { contact_id: string; name: string; phone: string; raw?: any }[] = []
     const skipped: { contact_id: string; reason: string }[] = []
 
     for (const person of people) {
@@ -498,7 +498,7 @@ app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
         email:         person.emails?.[0]?.value,
         client_id,
       }
-      triggered.push({ contact_id: payload.contact_id!, name: `${payload.first_name} ${payload.last_name || ''}`.trim(), phone: payload.phone_number })
+      triggered.push({ contact_id: payload.contact_id!, name: `${payload.first_name} ${payload.last_name || ''}`.trim(), phone: payload.phone_number, ...(dry_run ? { raw: person } : {}) })
       if (!dry_run) {
         handleCrmWebhook(payload, 'followupboss').catch((err) => {
           logger.error('trigger-contact workflow error', { error: err.message, contact_id: payload.contact_id })
