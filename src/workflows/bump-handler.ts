@@ -13,6 +13,7 @@ import { sendSmsMessage } from '../channels/sms'
 import { writeToCrm } from '../crm/adapter'
 import { updateDashboard } from '../reports/dashboard'
 import { buildWeeklyReport } from '../reports/weekly-report'
+import { generateBumpMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
 
 // ─── SCHEDULE 3 BUMPS + BUMP_CLOSE ───────────────────────────
@@ -89,50 +90,38 @@ async function processBumpJob(job: any) {
   }
 
   const config = await getClientConfig(contact.client_id)
-
-  // Nested template arrays [bump_group][variation_index]
-  const bumpTemplateGroups: string[][] = config.bump_templates || []
   const waBumpTemplateNamesGroups: string[][] = config.wa_bump_template_names || []
 
-  if (bumpTemplateGroups.length === 0) {
-    await db.query(`UPDATE outbound_queue SET status='cancelled' WHERE id=$1`, [job.id])
-    logger.warn('No bump_templates configured — skipping bump', { contact_id: contact.id })
-    return
-  }
-
   const bumpIndex: number = contact.bump_index || 0
-  const bumpVariationIndex: number = contact.bump_variation_index || 0
-
-  if (bumpIndex >= bumpTemplateGroups.length) {
+  if (bumpIndex >= 3) {
     await db.query(`UPDATE outbound_queue SET status='cancelled' WHERE id=$1`, [job.id])
     return
   }
 
-  const templateGroup = bumpTemplateGroups[bumpIndex]
-  if (!Array.isArray(templateGroup) || templateGroup.length === 0) {
-    await db.query(`UPDATE outbound_queue SET status='cancelled' WHERE id=$1`, [job.id])
-    logger.warn('Invalid bump template group', { contact_id: contact.id, bumpIndex })
-    return
+  const bumpNumber = bumpIndex + 1
+  const firstName = contact.first_name || ''
+
+  const aiPhrase = await generateBumpMessage({
+    bumpNumber,
+    conversationHistory: contact.ai_memory || '',
+  })
+
+  const bumpMessages: Record<number, string> = {
+    1: `Hey ${firstName}, just checking in — we were chatting about ${aiPhrase} and I didn't want to leave you hanging.`,
+    2: `Wanted to circle back, ${firstName} — we were busy discussing ${aiPhrase}. Let me know if you've got questions.`,
+    3: `Won't keep nudging after this, ${firstName} - just didn't want you to get stuck on ${aiPhrase}. Reply whenever it suits.`,
   }
+  const message = bumpMessages[bumpNumber]
 
-  const template = templateGroup[bumpVariationIndex % templateGroup.length]
-
-  const lastAIMsg = extractLastAIMessage(contact.ai_memory)
-  const aiContext = lastAIMsg || 'some questions I had for you'
-
-  const message = template
-    .replace(/{{first_name}}/g, contact.first_name || '')
-    .replace(/{{last_message}}/g, aiContext)
-
-  const waTemplateName = waBumpTemplateNamesGroups[bumpIndex]?.[bumpVariationIndex % (waBumpTemplateNamesGroups[bumpIndex]?.length || 1)] ?? null
-
+  const waTemplateName = waBumpTemplateNamesGroups[bumpIndex]?.[0] ?? null
   const channel = contact.channel || config.channel
+
   let result
   if (channel === 'whatsapp' && waTemplateName) {
     result = await sendWhatsAppTemplate(
       contact.phone_number,
       waTemplateName,
-      [contact.first_name || '', aiContext],
+      [firstName, aiPhrase],
       config.wa_phone_number_id!,
       config.wa_access_token!
     )
@@ -156,7 +145,7 @@ async function processBumpJob(job: any) {
     {
       contact_id: contact.id,
       tags_add: ['bump_sent'],
-      note: `IAE: Bump sent via ${channel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}`,
+      note: `IAE: Bump ${bumpNumber} sent via ${channel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}`,
       fields: { ai_memory: (contact.ai_memory || '') + `\nAI (bump): ${message}` },
     },
     config, contact.crm_callback_url
@@ -168,7 +157,7 @@ async function processBumpJob(job: any) {
     [contact.id, config.id, channel, message]
   )
 
-  logger.info('Bump sent', { contact_id: contact.id, channel, bump_index: bumpIndex })
+  logger.info('Bump sent', { contact_id: contact.id, channel, bump_number: bumpNumber })
 }
 
 // ─── BUMP CLOSE QUEUE PROCESSOR (73h — no reply after 3 bumps) ──────────────
@@ -233,17 +222,3 @@ async function processBumpCloseJob(job: any) {
   logger.info('Bump close fired — no reply after 3 bumps', { contact_id: contact.id })
 }
 
-// ─── HELPER: Extract last AI message from conversation history ─────────────
-function extractLastAIMessage(aiMemory: string | null): string {
-  if (!aiMemory) return ''
-
-  const lines = aiMemory.split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim()
-    if (line.startsWith('AI:') || line.startsWith('AI (ai_reply):')) {
-      const msg = line.replace(/^AI(\s*\([^)]*\))?:\s*/, '')
-      return msg.length > 120 ? msg.slice(0, 117) + '...' : msg
-    }
-  }
-  return ''
-}

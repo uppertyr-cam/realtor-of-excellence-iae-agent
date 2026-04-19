@@ -35,6 +35,17 @@ Entry point: `src/index.ts`
 - Keep `docs/platforms-and-services.md` up to date — whenever a new external platform, service, or infrastructure tool is added or removed, update this file immediately
 - After reading and using a screenshot, immediately delete it — both from `screenshots/` locally and from the VPS `screenshots` folder if applicable
 - VPS credentials are stored in `.env` under `VPS_IP`, `VPS_USER`, `VPS_PASSWORD`, `VPS_APP_DIR` — check there first, never ask the user to repeat them
+- Deploy to VPS using `expect` (not `sshpass` — not installed). The VPS uses key auth so SSH won't prompt for a password; send commands directly after connection. Template:
+  ```
+  expect -c "
+  spawn ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_IP
+  expect \"\\\$\"
+  send \"cd $VPS_APP_DIR && git pull && npm run build && pm2 restart iae-agent\r\"
+  expect \"\\\$\"
+  send \"exit\r\"
+  expect eof
+  "
+  ```
 - Pending tasks between sessions are tracked in `to-do-list/`
 - Any time the user mentions something to do at a later stage, immediately add it to `to-do-list/` — never leave it just in chat
 - One-off debug or test scripts go in `.tmp/` at the project root (gitignored). Delete them immediately after the task is complete — do not leave them scattered in the root.
@@ -56,6 +67,7 @@ Entry point: `src/index.ts`
 
 ## Hard Rules
 
+- Never edit files directly on the VPS — all changes must be made locally, committed, pushed, and deployed via `git pull` on the VPS
 - Never change the DB schema without updating `src/db/schema.sql`
 - Never hardcode client credentials — always read from the `clients` table via `src/config/client-config.ts`
 - Never remove `try/finally` blocks around DB lock release

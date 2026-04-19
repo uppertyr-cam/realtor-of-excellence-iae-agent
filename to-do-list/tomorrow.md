@@ -4,18 +4,26 @@
 
 In Meta Business Manager → WhatsApp → Message Templates, create and submit these for approval:
 
-| Template name | Used for |
-|---|---|
-| `bump_1` | 24h no-reply bump |
-| `bump_2` | 48h no-reply bump |
-| `bump_3` | 72h no-reply bump |
-| `bump_close` | 73h conversation close-out |
-| `reach_back_out` | Scheduled re-contact |
-| `followup1` | Day 7 drip follow-up |
-| `followup2` | Day 14 drip follow-up |
-| `followup3` | Day 21 drip follow-up |
+| Template name | Used for | Status |
+|---|---|---|
+| `first_message` | Initial database reactivation outreach | ✅ Submitted |
+| `followup1` | Day 7 drip follow-up | ✅ Submitted |
+| `followup2` | Day 14 drip follow-up | ✅ Submitted |
+| `followup3` | Day 21 drip follow-up | ✅ Submitted |
+| `bump_1` | 24h no-reply bump | ⏳ Submitted — awaiting approval |
+| `bump_2` | 48h no-reply bump | ⏳ Submitted — awaiting approval |
+| `bump_3` | 72h no-reply bump | ⏳ Submitted — awaiting approval |
+| `reach_back_out` | Scheduled re-contact | ⏳ Submitted — awaiting approval |
 
-Once approved, update the `realtor_of_excellence` client record via `POST /admin/clients` with the approved template SIDs/names.
+Note: `bump_close` needs no template — it only writes a CRM note, no message is sent.
+
+Once bump_1/2/3 approved, share the exact template names and Claude will update `wa_bump_template_names` on the `realtor_of_excellence` client via `POST /admin/clients`.
+
+Once `bump_1/2/3` and `reach_back_out` approved:
+- Set `wa_bump_template_names` on `realtor_of_excellence` client via `POST /admin/clients` (nested array — bump index maps to template name)
+- Set `wa_reach_back_out_template_name: "reach_back_out"` on `realtor_of_excellence` client via `POST /admin/clients`
+- Set `agent_name` on `realtor_of_excellence` client via `POST /admin/clients` (used as `{{2}}` in reach-back-out WA template)
+- Run `npm run db:migrate` on VPS to add `agent_name` column
 
 ---
 
@@ -33,43 +41,38 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
 
 ---
 
-## Code Side — Agent Q&A Relay with Prompt Learning
+## Code Side — Agent Q&A Relay with Prompt Learning ✅ DONE
 
-When a lead asks a question Cameron can't answer, instead of deflecting, relay it to the agent:
+**Pending — once Meta approves template `lead_question_relay` (~24h):**
+Run this to activate it:
+```
+POST https://api.uppertyr.com/admin/clients
+x-iae-secret: uppertyr-ai-secret-2026
+Content-Type: application/json
 
-1. New Claude tool `ask_agent` — AI calls this instead of routing to senior_team_member
-2. System pauses lead conversation, tags `awaiting_agent_answer`, stores the question
-3. Agent receives notification with the question via WhatsApp to business number
-4. Agent replies → system forwards answer to lead, removes await tag
-5. Agent replies "APPROVE" → system appends Q&A to `prompts/conversation.txt` FAQ section
-6. Next time someone asks that question, AI answers from FAQ without calling `ask_agent`
-
-**Files to modify:** `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/inbound-reply-handler.ts`, `src/workflows/ai-send-router.ts`, `prompts/conversation.txt`, `src/utils/types.ts`
-
-See full plan at `/Users/phone121212/.claude/plans/curried-scribbling-diffie.md`
+{ "id": "realtor_of_excellence", "agent_question_template": "lead_question_relay" }
+```
 
 ---
 
-## Your Side — Permanent WhatsApp API Token
+## Your Side — Permanent WhatsApp API Token ✅ DONE
 
-The current `wa_access_token` on the `realtor_of_excellence` client is a 24-hour test token. To get a permanent one:
+Permanent System User token saved to DB. Two future swaps needed:
 
-1. In Meta Business Manager, go to **Business Settings → Users → System Users**
-2. Create a System User (or use an existing one) with **Admin** role
-3. Assign the WhatsApp Business Account asset to that system user
-4. Generate a token — select the `whatsapp_business_messaging` and `whatsapp_business_management` permissions
-5. Set the token to **never expire**
-6. Update the client record via `POST /admin/clients` with the new `wa_access_token`
-
-Note: This requires the Business Manager to be fully verified. If it's still pending SIM card verification, that needs to be done first.
+- [ ] **Switch to real phone number** — when a production WhatsApp Business number is ready, update `wa_phone_number_id` on the `realtor_of_excellence` client via `POST /admin/clients`
+- [ ] **Verify token scope** — confirm the System User token was generated against the production app (not just the test app). If a new Meta app is ever created, a new token will be needed.
 
 ---
 
 ## Cleanup Tasks
 
-- [ ] Set `reach_back_out_message_template` on `realtor_of_excellence` client via `POST /admin/clients`
-- [ ] Fix missing `followup1_sent_at` DB column — add to `src/db/schema.sql` + run migration
+- [x] Reach-back-out AI generation implemented — `generateReachBackOutMessage()` in `src/ai/generate.ts`, wired into `scheduler.ts`
+- [x] Bump AI generation implemented — `generateBumpMessage()` in `src/ai/generate.ts`, wired into `bump-handler.ts`
+- [x] Fix missing `followup1_sent_at` DB column — resolved by using `workflow_stage` instead of timestamp columns
+- [x] Tracking improvements — 9 new DB columns, token tracking, delivery receipts, CRM failure counter, DB-persisted rate limiting, Google Sheets metrics tabs (Weekly/Monthly/4M/8M/Yearly)
+- [x] setTimeout overflow fixed in monthly/yearly schedulers — capped at 24h to avoid 32-bit wrap
 - [ ] Change weekly report email in `src/reports/weekly-report.ts` (currently `cameronbritt111@gmail.com`)
+- [ ] Add Agent Question number — set `stage_agents.default.target` on `realtor_of_excellence` client via `POST /admin/clients` once the agent's WhatsApp number is confirmed
 - [x] Delete orphan `client_001` DB record — done
 
 ---
