@@ -335,6 +335,8 @@ app.post('/admin/clients', requireAdminSecret, async (req, res) => {
       if (c.stage_agents !== undefined) { updates.push(`stage_agents = $${paramIndex++}`); params.push(JSON.stringify(c.stage_agents)) }
       if (c.wa_access_token !== undefined) { updates.push(`wa_access_token = $${paramIndex++}`); params.push(c.wa_access_token) }
       if (c.wa_phone_number_id !== undefined) { updates.push(`wa_phone_number_id = $${paramIndex++}`); params.push(c.wa_phone_number_id) }
+      if (c.crm_type !== undefined) { updates.push(`crm_type = $${paramIndex++}`); params.push(c.crm_type) }
+      if (c.crm_api_key !== undefined) { updates.push(`crm_api_key = $${paramIndex++}`); params.push(c.crm_api_key) }
 
       if (updates.length > 0) {
         updates.push(`updated_at = NOW()`)
