@@ -23,7 +23,7 @@ export async function handleInboundMessage(params: {
   channel: 'whatsapp' | 'sms'
   phone_number: string
 }) {
-  logger.info('Workflow 01 triggered — inbound message', {
+  logger.info('IAE-01 — Inbound Reply Handler triggered', {
     contact_id: params.contact_id, channel: params.channel,
   })
 
@@ -286,7 +286,7 @@ async function triggerAIGeneration(
       return
     }
 
-    // Store AI response for Workflow 02 to send
+    // Store AI response for IAE-02 to send
     await db.query(
       `INSERT INTO ai_responses (contact_id, client_id, response_text, channel, status)
        VALUES ($1,$2,$3,$4,'pending')`,
@@ -302,9 +302,9 @@ async function triggerAIGeneration(
       [updatedMemory, contactId, tokensUsed]
     )
 
-    logger.info('AI response stored — triggering Workflow 02', { contactId, keyword })
+    logger.info('AI response stored — triggering IAE-02', { contactId, keyword })
 
-    // Trigger Workflow 02 inline
+    // Trigger IAE-02 inline
     const { handleAIResponseReady } = await import('./ai-send-router')
     await handleAIResponseReady(contactId, keyword, scheduledAt)
 

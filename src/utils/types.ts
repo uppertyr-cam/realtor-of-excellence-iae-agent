@@ -99,6 +99,7 @@ export interface ClientConfig {
   stage_agents: Record<string, { channel: string; target: string }> | null
   agent_question_template: string | null
   agent_name: string | null
+  test_phone_numbers: string[]
 }
 
 // ─── SEND RESULT ─────────────────────────────────────────────

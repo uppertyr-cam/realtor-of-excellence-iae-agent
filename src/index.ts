@@ -57,9 +57,9 @@ app.post('/webhook/crm', async (req, res) => {
     // Respond immediately — process async so CRM doesn't time out
     res.json({ received: true, contact_id: payload.contact_id })
 
-    // Run Workflow 00 in background
+    // Run IAE-00 in background
     handleCrmWebhook(payload, crm_type || 'generic').catch((err) => {
-      logger.error('Workflow 00 error', { error: err.message, contact_id: payload.contact_id })
+      logger.error('IAE-00 error', { error: err.message, contact_id: payload.contact_id })
     })
 
   } catch (err: any) {
@@ -204,7 +204,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
         logger.info('Voice note transcribed successfully', { contactId, length: transcribedText.length })
 
-        // Trigger Workflow 01 with transcribed text
+        // Trigger IAE-01 with transcribed text
         await handleInboundMessage({
           contact_id:   contactId,
           message:      messageWithPrefix,
@@ -235,7 +235,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
     logger.info('WhatsApp message received', { from: phone, preview: messageText.slice(0, 50) })
 
-    // Trigger Workflow 01
+    // Trigger IAE-01
     await handleInboundMessage({
       contact_id:   contactId,
       message:      messageText,
@@ -292,7 +292,7 @@ app.post('/webhook/sms', async (req, res) => {
 
     const contactId = contactRes.rows[0].id
 
-    // Trigger Workflow 01
+    // Trigger IAE-01
     await handleInboundMessage({
       contact_id:   contactId,
       message:      body,
@@ -447,7 +447,7 @@ app.post('/admin/dashboard/refresh/:clientId', requireAdminSecret, async (req, r
   }
 })
 
-// Fetch contact(s) from FUB and feed into Workflow 00
+// Fetch contact(s) from FUB and feed into IAE-00
 // Body: { search?, contact_id?, limit?, client_id? }
 // - search: find by name/email (triggers first match)
 // - contact_id: fetch exact FUB person ID

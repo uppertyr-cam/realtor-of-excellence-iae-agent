@@ -1,8 +1,8 @@
 // ============================================================
-// WORKFLOW 02 — Send AI Message & Detect Keywords
-// Instant Appointment Engine — 02
+// IAE-02 — AI Response Send + Keyword Routing
+// Instant Appointment Engine
 //
-// Entry: triggered by Workflow 01 when AI response is ready
+// Entry: triggered by IAE-01 when AI response is ready
 // Handles: killswitch check → send → keyword detection → CRM
 // ============================================================
 
@@ -20,7 +20,7 @@ import { scheduleBumps, cancelBumps, cancelPendingBumps } from './bump-handler'
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleAIResponseReady(contactId: string, routedKeyword?: DetectedKeyword, scheduledAt?: string | null, chatHistory?: string) {
-  logger.info('Workflow 02 triggered', { contactId })
+  logger.info('IAE-02 — AI Response Send + Keyword Routing triggered', { contactId })
 
   // Load pending AI response
   const responseRes = await db.query(
@@ -58,7 +58,7 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
   const sendResult = await sendWithRetry(() => sendMessage(contact, config, responseText, channel))
 
   if (!sendResult.success) {
-    logger.error('Workflow 02: send failed after retries', { contactId })
+    logger.error('IAE-02: send failed after retries', { contactId })
     await db.query(
       `UPDATE ai_responses SET status='failed' WHERE id=$1`,
       [aiResponse.id]

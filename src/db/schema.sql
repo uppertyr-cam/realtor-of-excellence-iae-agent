@@ -273,6 +273,14 @@ BEGIN
     ALTER TABLE clients ADD COLUMN agent_name TEXT;
   END IF;
 
+  -- Test phone numbers: bypass working hours / rate limits in drip queue
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='test_phone_numbers'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN test_phone_numbers TEXT[] DEFAULT '{}';
+  END IF;
+
   -- Tracking improvements: webhook timing, reply timing, token usage, delivery receipts, CRM failures
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns

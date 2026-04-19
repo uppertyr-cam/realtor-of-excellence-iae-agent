@@ -19,7 +19,7 @@ import type { Contact, InboundWebhook, SendResult } from '../utils/types'
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleCrmWebhook(rawPayload: any, crmType: string) {
-  logger.info('Workflow 00 triggered', { crmType })
+  logger.info('IAE-00 — Outbound First Message triggered', { crmType })
 
   // ── Step 1: Normalise payload ───────────────────────────────
   let webhook: InboundWebhook
@@ -159,6 +159,26 @@ export async function processDripQueue() {
 
   for (const row of clientsRes.rows) {
     const config = await getClientConfig(row.client_id)
+
+    // ── Test contact pre-pass (bypass all rate limits) ──────
+    if (config.test_phone_numbers?.length) {
+      const testJobRes = await db.query(
+        `UPDATE outbound_queue SET status='processing'
+         WHERE id = (
+           SELECT oq.id FROM outbound_queue oq
+           JOIN contacts c ON c.id = oq.contact_id
+           WHERE oq.client_id=$1 AND oq.status='pending' AND oq.scheduled_at<=NOW()
+             AND c.phone_number = ANY($2)
+           ORDER BY oq.created_at ASC LIMIT 1
+           FOR UPDATE SKIP LOCKED
+         ) RETURNING *`,
+        [config.id, config.test_phone_numbers]
+      )
+      if (testJobRes.rowCount! > 0) {
+        await sendFirstMessage(testJobRes.rows[0], config)
+        continue
+      }
+    }
 
     // ── Working hours check ─────────────────────────────────
     if (!isWithinWorkingHours(config)) continue
