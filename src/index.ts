@@ -508,8 +508,9 @@ app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
 
     res.json({ dry_run: !!dry_run, triggered, skipped })
   } catch (err: any) {
-    logger.error('trigger-contact error', { error: err.message })
-    res.status(500).json({ error: err.message })
+    const detail = err.response?.data || err.message
+    logger.error('trigger-contact error', { error: err.message, detail })
+    res.status(500).json({ error: err.message, detail })
   }
 })
 
