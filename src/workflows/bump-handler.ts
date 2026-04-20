@@ -15,6 +15,7 @@ import { updateDashboard } from '../reports/dashboard'
 import { buildWeeklyReport } from '../reports/weekly-report'
 import { generateBumpMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
+import { alertEmail } from '../utils/alert'
 
 // ─── SCHEDULE 3 BUMPS + BUMP_CLOSE ───────────────────────────
 // Called after every AI reply (ai-send-router) and after reach-back-out send (scheduler)
@@ -70,6 +71,7 @@ export async function processBumpQueue() {
       await processBumpJob(job)
     } catch (err: any) {
       logger.error('Bump job error', { job_id: job.id, error: err.message })
+      alertEmail('Bump job error', { job_id: job.id, error: err.message })
       await db.query(`UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`, [err.message, job.id])
     }
   }
@@ -180,6 +182,7 @@ export async function processBumpCloseQueue() {
       await processBumpCloseJob(job)
     } catch (err: any) {
       logger.error('Bump close job error', { job_id: job.id, error: err.message })
+      alertEmail('Bump close job error', { job_id: job.id, error: err.message })
       await db.query(`UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`, [err.message, job.id])
     }
   }

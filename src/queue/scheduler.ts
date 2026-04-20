@@ -9,6 +9,7 @@ import { sendWeeklyReport, buildWeeklyReport, buildMonthlyMetrics, buildYearlyMe
 import { updateDashboard } from '../reports/dashboard'
 import { generateReachBackOutMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
+import { alertEmail } from '../utils/alert'
 
 // ─── START SCHEDULER ─────────────────────────────────────────
 export function startScheduler() {
@@ -25,6 +26,7 @@ export function startScheduler() {
       await db.releaseStaleLocks() // Safety net for stuck locks
     } catch (err: any) {
       logger.error('Scheduler tick error', { error: err.message })
+      alertEmail('Scheduler tick error', { error: err.message })
     }
   }, 60_000)
 
@@ -50,13 +52,16 @@ export function startScheduler() {
 // ─── WEEKLY REPORT SCHEDULER ─────────────────────────────────
 function scheduleWeeklyReport() {
   function msUntilNextMonday9am(): number {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Johannesburg' }))
-    const target = new Date(now)
-    const day = now.getDay() // 0=Sun, 1=Mon
-    const daysUntilMonday = day === 1 ? (now.getHours() < 9 || (now.getHours() === 9 && now.getMinutes() === 0) ? 0 : 7) : (8 - day) % 7 || 7
-    target.setDate(now.getDate() + daysUntilMonday)
-    target.setHours(9, 0, 0, 0)
-    return target.getTime() - now.getTime()
+    const SAST = 2 * 60 * 60 * 1000 // UTC+2, no DST
+    const nowSast = new Date(Date.now() + SAST)
+    const day = nowSast.getUTCDay() // 0=Sun, 1=Mon
+    const daysUntilMonday = day === 1
+      ? (nowSast.getUTCHours() < 9 || (nowSast.getUTCHours() === 9 && nowSast.getUTCMinutes() === 0) ? 0 : 7)
+      : (8 - day) % 7 || 7
+    const target = new Date(Date.now() + SAST)
+    target.setUTCDate(nowSast.getUTCDate() + daysUntilMonday)
+    target.setUTCHours(9, 0, 0, 0)
+    return target.getTime() - nowSast.getTime()
   }
 
   function scheduleNext() {
@@ -67,6 +72,7 @@ function scheduleWeeklyReport() {
         await sendWeeklyReport()
       } catch (err: any) {
         logger.error('Weekly report failed', { error: err.message })
+        alertEmail('Weekly report failed', { error: err.message })
       }
       scheduleNext() // schedule the following week
     }, ms)
@@ -98,6 +104,7 @@ function scheduleMonthlyMetrics() {
       if (msUntilFirst9am() > 60_000) { scheduleNext(); return } // not time yet
       try { await buildMonthlyMetrics() } catch (err: any) {
         logger.error('Monthly metrics failed', { error: err.message })
+        alertEmail('Monthly metrics failed', { error: err.message })
       }
       scheduleNext()
     }, delay)
@@ -126,6 +133,7 @@ function scheduleYearlyMetrics() {
       if (msUntilJan1st9am() > 60_000) { scheduleNext(); return } // not time yet
       try { await buildYearlyMetrics() } catch (err: any) {
         logger.error('Yearly metrics failed', { error: err.message })
+        alertEmail('Yearly metrics failed', { error: err.message })
       }
       scheduleNext()
     }, delay)
@@ -154,6 +162,7 @@ async function processFollowUpQueue() {
       await processFollowUpJob(job)
     } catch (err: any) {
       logger.error('Follow-up job error', { job_id: job.id, error: err.message })
+      alertEmail('Follow-up job error', { job_id: job.id, error: err.message })
       await db.query(`UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`, [err.message, job.id])
     }
   }
@@ -271,6 +280,7 @@ async function processReachBackOutQueue() {
       await processReachBackOutJob(job)
     } catch (err: any) {
       logger.error('Reach-back-out job error', { job_id: job.id, error: err.message })
+      alertEmail('Reach-back-out job error', { job_id: job.id, error: err.message })
       await db.query(`UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`, [err.message, job.id])
     }
   }

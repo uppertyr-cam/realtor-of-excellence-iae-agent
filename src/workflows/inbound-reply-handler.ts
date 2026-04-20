@@ -11,6 +11,7 @@ import { getClientConfig } from '../config/client-config'
 import { generateAIResponse } from '../ai/generate'
 import { writeToCrm } from '../crm/adapter'
 import { logger } from '../utils/logger'
+import { alertEmail } from '../utils/alert'
 
 const DEBOUNCE_MS = 5_000
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -311,6 +312,7 @@ async function triggerAIGeneration(
 
   } catch (err: any) {
     logger.error('AI generation failed', { contactId, error: err.message })
+    alertEmail('AI generation failed', { contact_id: contactId, error: err.message })
     await removeTag(contactId, 'reply_generating')
     await db.query(
       `UPDATE contacts SET tags=array_append(tags,'ai_failed') WHERE id=$1`,

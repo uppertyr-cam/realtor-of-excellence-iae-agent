@@ -14,6 +14,7 @@ import { validateWhatsAppNumber, sendWhatsAppMessage, sendWhatsAppTemplate } fro
 import { sendSmsMessage } from '../channels/sms'
 import { isWithinWorkingHours } from '../utils/working-hours'
 import { logger } from '../utils/logger'
+import { alertEmail } from '../utils/alert'
 import type { Contact, InboundWebhook, SendResult } from '../utils/types'
 
 
@@ -290,6 +291,7 @@ async function sendFirstMessage(job: any, config: any) {
 
   if (!result.success) {
     logger.error('First message send failed after retries', { contact_id: contact.id })
+    alertEmail('First message failed', { contact_id: contact.id })
     await db.query(
       `UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`,
       [result.error, job.id]
