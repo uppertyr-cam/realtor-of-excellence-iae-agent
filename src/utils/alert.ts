@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer'
 
 export function alertEmail(subject: string, context: Record<string, unknown>): void {
   const FROM_EMAIL   = process.env.FROM_EMAIL || ''
-  const REPORT_EMAIL = process.env.REPORT_EMAIL || ''
+  const REPORT_EMAIL = process.env.ALERT_EMAIL || process.env.REPORT_EMAIL || ''
   const APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '')
 
   if (!FROM_EMAIL || !REPORT_EMAIL || !APP_PASSWORD) return

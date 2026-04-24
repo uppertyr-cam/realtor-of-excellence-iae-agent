@@ -133,9 +133,10 @@ Entry point: `src/index.ts`
 | `VPS_PASSWORD` | Contabo VPS password | ✅ Set in .env |
 | `VPS_APP_DIR` | Contabo VPS app directory | ✅ Set in .env |
 | `GITHUB_PAT` | GitHub PAT for VPS deploy pulls | ✅ Set in .env |
-| `FROM_EMAIL` | Gmail address weekly report is sent from | ⚠️ Add to .env |
-| `REPORT_EMAIL` | Gmail address weekly report is sent to | ⚠️ Add to .env |
-| `GMAIL_APP_PASSWORD` | Gmail App Password for weekly report sender | ⚠️ Add to .env |
+| `ALERT_EMAIL` | Destination for [IAE Alert] error emails (falls back to REPORT_EMAIL) | ✅ Set |
+| `FROM_EMAIL` | Gmail address weekly report is sent from | ✅ Set |
+| `REPORT_EMAIL` | Gmail address weekly report is sent to | ✅ Set |
+| `GMAIL_APP_PASSWORD` | Gmail App Password for weekly report sender | ✅ Set |
 
 ---
 

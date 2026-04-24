@@ -27,6 +27,32 @@ Once `bump_1/2/3` and `reach_back_out` approved:
 
 ---
 
+## Your Side — Twilio Regulatory Bundle
+
+- [ ] Wait for Twilio regulatory bundle approval
+- [ ] Once approved: buy a South African number on Twilio
+- [ ] Verify the Twilio number on Meta (register it as a WhatsApp Business number)
+- [ ] Update `wa_phone_number_id` on `realtor_of_excellence` client via `POST /admin/clients`
+- [ ] Re-enable `wa_first_message_template_name` and other template names on the client
+
+---
+
+## Code Side — One-Off Config Updates (do once, then done)
+
+Run these POST /admin/clients calls after deploy:
+
+```
+# Activate workflow-based prompt routing for database reactivation
+POST https://api.uppertyr.com/admin/clients
+{ "id": "realtor_of_excellence", "workflow_prompts": { "ai_database_reactivation": "prompts/conversation.txt" } }
+
+# Activate agent question relay template (once lead_question_relay approved by Meta)
+POST https://api.uppertyr.com/admin/clients
+{ "id": "realtor_of_excellence", "agent_question_template": "lead_question_relay" }
+```
+
+---
+
 ## Code Side — Follow Up Boss CRM Integration
 
 Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
@@ -38,6 +64,13 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
   - Notes: `POST /notes` with `{ personId, body }`
 - After deploy: update `realtor_of_excellence` client with `crm_type: "followupboss"` + FUB API key
 - **TODO: Add FUB API key to `.env`** — get key from Follow Up Boss (Admin → API) and add as `FUB_API_KEY=...`, then set on client record via `POST /admin/clients`
+- **Known issue: FUB contacts created via API have no `crm_callback_url`** — CRM writes currently log a warning and continue. Fix: store the FUB contact ID at upsert and construct the callback URL from it.
+
+---
+
+## Code Side — Bug Fix: Duplicate AI Messages in ai_memory
+
+Each AI reply is currently stored twice in `ai_memory` (once in IAE-01, once in IAE-02). Needs investigation and fix in `src/workflows/inbound-reply-handler.ts` and `src/workflows/ai-send-router.ts`.
 
 ---
 
@@ -71,24 +104,28 @@ Permanent System User token saved to DB. Two future swaps needed:
 - [x] Fix missing `followup1_sent_at` DB column — resolved by using `workflow_stage` instead of timestamp columns
 - [x] Tracking improvements — 9 new DB columns, token tracking, delivery receipts, CRM failure counter, DB-persisted rate limiting, Google Sheets metrics tabs (Weekly/Monthly/4M/8M/Yearly)
 - [x] setTimeout overflow fixed in monthly/yearly schedulers — capped at 24h to avoid 32-bit wrap
+- [x] Test phone bypass — +27761536498 skips working hours and rate limits for first message
+- [x] workflow_prompts tag-based prompt routing — inbound replies now load the correct prompt per workflow
+- [x] ai_database_reactivation tag — applied at upsert, post-send, and CRM write
 - [ ] Change weekly report email in `src/reports/weekly-report.ts` (currently `cameronbritt111@gmail.com`)
+- [ ] Update `ALERT_EMAIL` in VPS `.env` when ready to redirect error alerts to a different address — currently falls back to `cameronbritt111@gmail.com`
 - [ ] Add Agent Question number — set `stage_agents.default.target` on `realtor_of_excellence` client via `POST /admin/clients` once the agent's WhatsApp number is confirmed
+- [ ] Update `first_message_template` on client — currently says "Cameron", confirm persona name (Sarah) then update via `POST /admin/clients`
 - [x] Delete orphan `client_001` DB record — done
 
 ---
 
 ## Testing — Full Conversation Flow
-⚠️ Something went wrong in the previous session. Run a complete test before assuming everything works:
-- [ ] Create test contact with real phone number (or use database directly)
-- [ ] Send first message from CRM webhook
-- [ ] Simulate inbound reply from test contact
-- [ ] Verify AI response generates and sends
-- [ ] Check keyword detection works
-- [ ] Verify bump scheduling and reach-back-out scheduling
-- [ ] Check database state throughout
+- [x] Create test contact with real phone number
+- [x] Send first message from CRM webhook
+- [x] Simulate inbound reply from test contact
+- [x] Verify AI response generates and sends
+- [x] Check keyword detection works (not_interested tested — voucher links confirmed)
+- [ ] Verify bump scheduling and reach-back-out scheduling end-to-end
+- [ ] Check database state throughout a full multi-day drip sequence
 
 ## Verification Steps
-1. Deploy code + run `npm run db:migrate` on VPS
-2. Update `realtor_of_excellence` client with FUB credentials
-3. Trigger a test webhook — confirm note and tags appear in Follow Up Boss contact
+1. Deploy code + run `npm run db:migrate` on VPS ✅ Done
+2. Update `realtor_of_excellence` client with FUB credentials (pending FUB integration)
+3. Set `workflow_prompts` on `realtor_of_excellence` client (see config updates section above)
 4. Trigger a reach-back-out test — confirm message fires at scheduled time, bumps queue after
