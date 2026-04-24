@@ -114,11 +114,11 @@ export async function updateDashboard(clientId: string): Promise<void> {
     // ── Ensure Dashboard tab exists ───────────────────────────
     const meta = await sheets.spreadsheets.get({ spreadsheetId })
     const existing = meta.data.sheets || []
-    let dashSheet = existing.find(s => s.properties?.title === 'Dashboard')
+    let dashSheet = existing.find((s: any) => s.properties?.title === 'Dashboard')
     let sheetId: number
 
     // ── Delete legacy "Contact Notes" tab if it still exists ──
-    const legacyTab = existing.find(s => s.properties?.title === 'Contact Notes')
+    const legacyTab = existing.find((s: any) => s.properties?.title === 'Contact Notes')
     if (legacyTab) {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId,
@@ -237,4 +237,3 @@ export async function updateDashboard(clientId: string): Promise<void> {
     logger.error('Dashboard update failed — non-fatal', { clientId, error: err.message })
   }
 }
-

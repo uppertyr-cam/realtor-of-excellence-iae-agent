@@ -318,7 +318,7 @@ export async function buildWeeklyReport(): Promise<string> {
     // ── Get or overwrite the "Weekly Report" tab ─────────────
     const tabTitle = `Weekly Report`
     const metaRes = await sheets.spreadsheets.get({ spreadsheetId: masterId, fields: 'sheets(properties,conditionalFormats)' })
-    const existing = metaRes.data.sheets?.find(s => s.properties?.title === tabTitle)
+    const existing = metaRes.data.sheets?.find((s: any) => s.properties?.title === tabTitle)
     let sheetId: number
 
     if (existing) {
@@ -328,7 +328,7 @@ export async function buildWeeklyReport(): Promise<string> {
       // Delete all existing conditional format rules so they don't accumulate across runs
       const cfCount = existing.conditionalFormats?.length || 0
       if (cfCount > 0) {
-        const delRequests = Array.from({ length: cfCount }, (_, i) => ({
+        const delRequests = Array.from({ length: cfCount }, () => ({
           deleteConditionalFormatRule: { sheetId: existing.properties!.sheetId!, index: 0 }
         }))
         await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: delRequests } })

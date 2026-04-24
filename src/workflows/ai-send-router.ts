@@ -76,9 +76,8 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
     [contactId]
   )
 
-  // ── Step 4: Update AI memory with sent message ────────────
-  const updatedMemory = (contact.ai_memory || '') + `\nAI: ${responseText}`
-  await db.query(`UPDATE contacts SET ai_memory=$1 WHERE id=$2`, [updatedMemory, contactId])
+  // IAE-01 already persisted this AI response to ai_memory before handing off here.
+  const updatedMemory = contact.ai_memory || ''
 
   // ── Step 5: Add note to CRM ───────────────────────────────
   await writeToCrm(

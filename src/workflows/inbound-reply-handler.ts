@@ -73,11 +73,11 @@ async function processBufferedMessages(contactId: string, channel: string) {
     // Clear buffer
     await db.query(`DELETE FROM message_buffer WHERE contact_id=$1`, [contactId])
 
-    // Cancel any pending bumps and reach_back_out — lead has replied
+    // Cancel all pending outbound automation once the lead has replied.
     await db.query(
       `UPDATE outbound_queue SET status='cancelled'
        WHERE contact_id=$1 AND status='pending'
-       AND message_type IN ('bump','bump_close','reach_back_out')`,
+       AND message_type IN ('followup1','followup2','followup3','bump','bump_close','reach_back_out')`,
       [contactId]
     )
 
@@ -421,8 +421,13 @@ export async function notifyStageAgent(contact: any, config: any, message: strin
 }
 
 async function notifyAgent(contact: any, config: any, message: string) {
-  // Use stage-based routing if available, otherwise use legacy notification_target
-  await notifyStageAgent(contact, config, message)
+  if (!config.notification_target) {
+    logger.warn('No legacy notification target configured', { contact_id: contact.id })
+    return
+  }
+
+  const channel = config.notification_channel || 'email'
+  await sendNotification(channel, config.notification_target, message, config)
 }
 
 function sleep(ms: number) {

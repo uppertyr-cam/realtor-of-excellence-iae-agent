@@ -3,6 +3,7 @@ import { SendResult } from '../utils/types'
 import { logger } from '../utils/logger'
 
 const META_API_BASE = 'https://graph.facebook.com/v19.0'
+const DEFAULT_COUNTRY_CODE = process.env.DEFAULT_COUNTRY_CODE || '27'
 
 // Validate if a number is on WhatsApp using the contacts API
 // This does NOT send any message to the user
@@ -124,5 +125,17 @@ export async function sendWhatsAppMessage(
 
 // Normalise phone number to E.164 format
 function cleanPhone(phone: string): string {
-  return phone.replace(/\D/g, '').replace(/^0/, '61') // example: AU format
+  const trimmed = phone.trim()
+  if (trimmed.startsWith('+')) {
+    return trimmed.slice(1).replace(/\D/g, '')
+  }
+
+  const digits = trimmed.replace(/\D/g, '')
+  if (digits.startsWith('00')) {
+    return digits.slice(2)
+  }
+  if (digits.startsWith('0')) {
+    return `${DEFAULT_COUNTRY_CODE}${digits.slice(1)}`
+  }
+  return digits
 }

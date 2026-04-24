@@ -57,10 +57,16 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
        webhook_received_at, assigned_to, tags
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9,ARRAY['ai_database_reactivation'])
      ON CONFLICT (id) DO UPDATE SET
+       client_id = EXCLUDED.client_id,
+       crm_source = EXCLUDED.crm_source,
        crm_callback_url = EXCLUDED.crm_callback_url,
+       phone_number = EXCLUDED.phone_number,
+       first_name = EXCLUDED.first_name,
+       last_name = EXCLUDED.last_name,
+       email = EXCLUDED.email,
        workflow_stage = 'pending',
        assigned_to = EXCLUDED.assigned_to,
-       tags = array_append(contacts.tags, 'ai_database_reactivation'),
+       tags = ARRAY(SELECT DISTINCT UNNEST(contacts.tags || ARRAY['ai_database_reactivation'])),
        updated_at = NOW()`,
     [
       webhook.contact_id, webhook.client_id, webhook.crm_type,
@@ -297,7 +303,10 @@ async function sendFirstMessage(job: any, config: any) {
       [result.error, job.id]
     )
     await db.query(
-      `UPDATE contacts SET workflow_stage='closed', tags=array_append(tags,'send_failed') WHERE id=$1`,
+      `UPDATE contacts
+       SET workflow_stage='closed',
+           tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['send_failed']))
+       WHERE id=$1`,
       [contact.id]
     )
     await writeToCrm({ contact_id: contact.id, tags_add: ['send_failed'], note: `IAE: First message failed — ${result.error}` }, config, contact.crm_callback_url)
@@ -309,7 +318,9 @@ async function sendFirstMessage(job: any, config: any) {
   await db.query(
     `UPDATE contacts SET
        workflow_stage='active',
-       tags=array_append(array_append(array_append(tags,'first_message_sent'),'database_reactivation'),'ai_database_reactivation'),
+       tags=ARRAY(
+         SELECT DISTINCT UNNEST(tags || ARRAY['first_message_sent', 'database_reactivation', 'ai_database_reactivation'])
+       ),
        first_message_sent=$1,
        first_message_at=$2,
        ai_memory=$4,
