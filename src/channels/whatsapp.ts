@@ -82,19 +82,25 @@ export async function sendWhatsAppMessage(
   }
 }
 
-// Normalise phone number to E.164 format
+// Normalise phone number to E.164 format (digits only, no leading +)
 function cleanPhone(phone: string): string {
   const trimmed = phone.trim()
+  let digits: string
+
   if (trimmed.startsWith('+')) {
-    return trimmed.slice(1).replace(/\D/g, '')
+    digits = trimmed.slice(1).replace(/\D/g, '')
+  } else {
+    digits = trimmed.replace(/\D/g, '')
+    if (digits.startsWith('00')) {
+      digits = digits.slice(2)
+    } else if (digits.startsWith('0')) {
+      digits = `${DEFAULT_COUNTRY_CODE}${digits.slice(1)}`
+    }
   }
 
-  const digits = trimmed.replace(/\D/g, '')
-  if (digits.startsWith('00')) {
-    return digits.slice(2)
+  if (digits.length < 7 || digits.length > 15) {
+    throw new Error(`Invalid phone number format: "${phone}"`)
   }
-  if (digits.startsWith('0')) {
-    return `${DEFAULT_COUNTRY_CODE}${digits.slice(1)}`
-  }
+
   return digits
 }

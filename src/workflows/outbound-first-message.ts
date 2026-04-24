@@ -211,6 +211,7 @@ async function sendFirstMessage(job: any, config: any) {
 
   // Send via correct channel
   const channel = contact.channel || config.channel
+  const originalPhone = contact.phone_number
   let targetPhone = contact.phone_number
   let deliveryChannel: 'whatsapp' | 'sms' = channel === 'sms' ? 'sms' : 'whatsapp'
   let result: SendResult
@@ -264,19 +265,25 @@ async function sendFirstMessage(job: any, config: any) {
   }
 
   if (!result.success && channel === 'whatsapp' && config.channel === 'whatsapp_sms_fallback') {
+    if (!config.sms_account_sid || !config.sms_auth_token || !config.sms_from_number) {
+      logger.error('WhatsApp failed but SMS credentials are not configured — cannot fall back', {
+        contact_id: contact.id,
+      })
+      result = { success: false, error: 'SMS credentials not configured' }
+    } else {
     logger.warn('WhatsApp send failed — falling back to SMS', {
       contact_id: contact.id,
-      phone_number: targetPhone,
+      phone_number: originalPhone,
       error: result.error,
     })
 
     const smsResult = await sendWithRetry(() =>
       sendSmsMessage(
-        targetPhone,
+        originalPhone,
         message,
-        config.sms_account_sid,
-        config.sms_auth_token,
-        config.sms_from_number
+        config.sms_account_sid!,
+        config.sms_auth_token!,
+        config.sms_from_number!
       )
     )
 
@@ -301,6 +308,7 @@ async function sendFirstMessage(job: any, config: any) {
         contact.crm_callback_url
       )
     }
+    } // end else (SMS credentials present)
   }
 
   if (!result.success) {
@@ -418,7 +426,13 @@ async function tryAlternateFollowUpBossNumbers(
   const auth = { username: config.crm_api_key, password: '' }
 
   try {
-    const response = await axios.get(`${base}/people/${contact.id}`, { auth, timeout: 15_000 })
+    let response
+    try {
+      response = await axios.get(`${base}/people/${contact.id}`, { auth, timeout: 15_000 })
+    } catch {
+      await new Promise((r) => setTimeout(r, 2_000))
+      response = await axios.get(`${base}/people/${contact.id}`, { auth, timeout: 15_000 })
+    }
     const alternateNumbers = ((response.data?.phones || []) as Array<{ value?: string }>)
       .map((phone) => phone.value?.trim())
       .filter((phone): phone is string => !!phone && phone !== contact.phone_number)
