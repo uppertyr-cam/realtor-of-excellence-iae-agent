@@ -1,7 +1,7 @@
-# Workflow: IAE-01 — Inbound Reply Handler
+# Workflow: Inbound Reply Handler
 
 ## Objective
-When a lead replies via WhatsApp or SMS, buffer and debounce their message(s), acquire a DB lock on the contact, route based on tags and loop counter, generate an AI response via Claude, then hand off to IAE-02 for sending.
+When a lead replies via WhatsApp or SMS, buffer and debounce their message(s), acquire a DB lock on the contact, route based on tags and loop counter, generate an AI response via Claude, then hand off to AI Response Send + Keyword Routing for sending.
 
 ## File
 `src/workflows/inbound-reply-handler.ts`
@@ -107,7 +107,7 @@ Twilio signature verification is not yet implemented — all SMS webhooks are ac
 5. Extract `keyword` and `scheduledAt` from `route_lead` tool call (if Claude used it)
 6. Store AI response in `ai_responses` table (`status='pending'`)
 7. Append to `contact.ai_memory`: `"AI: {responseText}"`
-8. Trigger IAE-02: `handleAIResponseReady(contactId, keyword, scheduledAt, chatHistory)`
+8. Trigger AI Response Send + Keyword Routing: `handleAIResponseReady(contactId, keyword, scheduledAt, chatHistory)`
 
 **ON FAILURE:**
 - Remove tag `reply_generating`
@@ -143,4 +143,4 @@ Twilio signature verification is not yet implemented — all SMS webhooks are ac
 - The `processing_locked` flag prevents race conditions when leads reply in rapid succession. The scheduler auto-releases locks older than 2 minutes.
 - The prompt file is read fresh from disk on every AI call — you can edit `prompts/conversation.txt` on the VPS without restarting the server.
 - The debounce timer is in-memory — it does not survive a server restart. If the server restarts mid-debounce, the buffered message will remain in `message_buffer` unprocessed until the next inbound message triggers a new timer for that contact.
-- Claude's `route_lead` tool is the primary source for keyword routing — `detectKeyword()` text scan in IAE-02 is the fallback only.
+- Claude's `route_lead` tool is the primary source for keyword routing — `detectKeyword()` text scan in AI Response Send + Keyword Routing is the fallback only.

@@ -1,6 +1,6 @@
 // ============================================================
-// WORKFLOW 01 — Send to AI · Get Response
-// Instant Appointment Engine — 01
+// Inbound Reply Handler
+// Instant Appointment Engine — Inbound Reply Handler
 //
 // Entry: POST /webhook/inbound  (WhatsApp or SMS reply)
 // Handles: debounce → data capture → route → generate AI reply
@@ -24,7 +24,7 @@ export async function handleInboundMessage(params: {
   channel: 'whatsapp' | 'sms'
   phone_number: string
 }) {
-  logger.info('IAE-01 — Inbound Reply Handler triggered', {
+  logger.info('Inbound Reply Handler triggered', {
     contact_id: params.contact_id, channel: params.channel,
   })
 
@@ -288,7 +288,7 @@ async function triggerAIGeneration(
       return
     }
 
-    // Store AI response for IAE-02 to send
+    // Store AI response for AI Response Send + Keyword Routing to send
     await db.query(
       `INSERT INTO ai_responses (contact_id, client_id, response_text, channel, status)
        VALUES ($1,$2,$3,$4,'pending')`,
@@ -304,9 +304,9 @@ async function triggerAIGeneration(
       [updatedMemory, contactId, tokensUsed]
     )
 
-    logger.info('AI response stored — triggering IAE-02', { contactId, keyword })
+    logger.info('AI response stored — triggering AI Response Send + Keyword Routing', { contactId, keyword })
 
-    // Trigger IAE-02 inline
+    // Trigger AI Response Send + Keyword Routing inline
     const { handleAIResponseReady } = await import('./ai-send-router')
     await handleAIResponseReady(contactId, keyword, scheduledAt)
 

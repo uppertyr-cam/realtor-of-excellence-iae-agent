@@ -18,15 +18,15 @@ Everything below is implemented and functional.
 - **Working hours check** — `src/utils/working-hours.ts:isWithinWorkingHours()` + `msUntilNextWorkingWindow()`: fully timezone-aware via `config.timezone`
 - **Logger** — `src/utils/logger.ts`: winston-based structured logging
 
-### IAE-00 — Outbound First Message
-- **CRM webhook handler** — `src/workflows/outbound-first-message.ts:handleCrmWebhook()`: normalise → duplicate check → upsert → validate → queue
-- **WhatsApp number validation** — `src/channels/whatsapp.ts:validateWhatsAppNumber()`: Meta contacts API, tries all `phone_numbers[]` from CRM in order, falls back to SMS
+### Outbound First Message
+- **CRM webhook handler** — `src/workflows/outbound-first-message.ts:handleCrmWebhook()`: normalise → duplicate check → upsert → set channel → queue
+- **WhatsApp delivery fallback** — `src/workflows/outbound-first-message.ts:sendFirstMessage()`: first attempts WhatsApp delivery, then tries alternate Follow Up Boss numbers, then falls back to SMS only when the client is configured for `whatsapp_sms_fallback`
 - **Drip queue processor** — `src/workflows/outbound-first-message.ts:processDripQueue()`: working hours gate, daily limit (default 50), send interval gate (default 10 min)
 - **First message send** — `src/workflows/outbound-first-message.ts:sendFirstMessage()`: template personalisation (`{{first_name}}` etc.), channel priority (WA template > WA freeform > SMS), 3x retry with exponential backoff
 - **Follow-up scheduling** — Inserted into `outbound_queue` at +7/+14/+21 days from first send
 - **Admin force-send** — `src/index.ts POST /admin/contacts/:id/force-send` → `forceSendContact()`
 
-### IAE-01 — Inbound Reply Handler
+### Inbound Reply Handler
 - **Message buffer + debounce** — `src/workflows/inbound-reply-handler.ts:handleInboundMessage()`: 5s debounce (`DEBOUNCE_MS = 5000`), multiple messages within window concatenated before processing
 - **DB lock on processing** — `src/db/client.ts:acquireLock()`: prevents race conditions on concurrent webhook deliveries for the same contact
 - **Loop counter with optional reset** — `src/workflows/inbound-reply-handler.ts:processBufferedMessages()`: increments per reply cycle, configurable max (`loop_counter_max`, default 50), optional reset after N hours of silence (`loop_counter_reset_hours`)
@@ -34,7 +34,7 @@ Everything below is implemented and functional.
 - **Stage-based agent routing** — `src/workflows/inbound-reply-handler.ts:notifyStageAgent()`: reads `config.stage_agents` JSONB, priority-ordered tag matching, dispatches via WhatsApp or SMS
 - **Voice note transcription** — `src/channels/transcription.ts:downloadWhatsAppAudio()` + `transcribeAudio()`: Meta media download (30s timeout) + OpenAI Whisper (120s timeout), optional per-client via `openai_api_key`
 
-### IAE-02 — AI Send + Keyword Routing
+### AI Response Send + Keyword Routing
 - **Claude AI generation** — `src/ai/generate.ts:generateAIResponse()`: Claude Sonnet 4.6, max_tokens=1000, 30s timeout, 3 retries with exponential backoff
 - **Prompt caching** — `src/ai/generate.ts`: `cache_control: ephemeral` on system prompt, `prompt-caching-2024-07-31` beta header
 - **`route_lead` tool** — `src/ai/generate.ts:ROUTE_LEAD_TOOL`: Claude signals keyword via tool call; 6 actions: `not_interested`, `renting`, `reach_back_out`, `senior_team_member`, `interested_in_purchasing`, `already_purchased`

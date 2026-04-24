@@ -1,6 +1,6 @@
 # The Three Workflows
 
-## Workflow 00 — Conversational Starter (outbound)
+## Outbound First Message
 **File:** `src/workflows/outbound-first-message.ts`
 **Triggered by:** `POST /webhook/crm`
 
@@ -12,14 +12,14 @@
 6. Post-send: tags contact, writes back to CRM, schedules Follow-ups at 7, 14, and 21 days
 7. Follow-up 1 (day 7) → Follow-up 2 (day 14) → Follow-up 3 (day 21) → close out
 
-Also in **Workflow 02**, after every AI send:
+Also in **AI Response Send + Keyword Routing**, after every AI send:
 - 3 Bumps scheduled at 24h / 48h / 72h — resets every time AI replies
 - If no reply after 72h: bump_close fires, writes conversation summary note to CRM, tags `bump_no_reply`
 - If lead replies at any point: all pending bumps are cancelled
 
 ---
 
-## Workflow 01 — AI Router (inbound)
+## Inbound Reply Handler
 **File:** `src/workflows/inbound-reply-handler.ts`
 **Triggered by:** `POST /webhook/whatsapp` or `POST /webhook/sms`
 
@@ -36,14 +36,14 @@ Also in **Workflow 02**, after every AI send:
    - default → generate AI response
 7. AI generation: read prompt file fresh from disk + inject lead data + call Claude API
 8. Store AI response in `ai_responses` table
-9. Trigger Workflow 02 inline
+9. Trigger AI Response Send + Keyword Routing inline
 10. Release DB lock
 
 ---
 
-## Workflow 02 — Send + Keyword Detection
+## AI Response Send + Keyword Routing
 **File:** `src/workflows/ai-send-router.ts`
-**Triggered by:** Workflow 01 calling `handleAIResponseReady(contactId)`
+**Triggered by:** Inbound Reply Handler calling `handleAIResponseReady(contactId)`
 
 1. Remove `reply_generating` tag
 2. Check if AI response contains "Goodbye" — if yes: killswitch (tag, note, clear fields, END)
@@ -66,4 +66,4 @@ When a `reach_back_out` row in `outbound_queue` reaches its `scheduled_at` time:
 4. Schedule 3 bumps (24h/48h/72h) + bump_close (73h) — same pattern as after every AI reply
 5. Dashboard shows contact under "Lead Responded" once `reach_back_out_sent` tag is present
 
-If lead replies before the scheduled time, the `reach_back_out` queue row is cancelled automatically (Workflow 01 inbound handler).
+If lead replies before the scheduled time, the `reach_back_out` queue row is cancelled automatically (Inbound Reply Handler).

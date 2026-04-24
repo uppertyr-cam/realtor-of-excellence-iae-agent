@@ -37,7 +37,7 @@ Contacts progress through qualification with automatic tag tracking:
 
 1. Start the server: `npm run dev`
 2. Add a test client via `POST /admin/clients`
-3. Trigger Workflow 00:
+3. Trigger Outbound First Message:
 ```bash
 curl -X POST http://localhost:3000/webhook/crm \
   -H "x-iae-secret: your_secret" \

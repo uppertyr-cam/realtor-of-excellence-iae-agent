@@ -83,7 +83,7 @@ Entry point: `src/index.ts`
 - CRM write failures: non-fatal — log and continue, never crash the workflow
 - DB lock: always released in `try/finally`, even on error
 - Stale locks (>2min): auto-released by scheduler — do not work around this
-- Duplicate webhooks: silently rejected at the top of Workflow 00
+- Duplicate webhooks: silently rejected at the top of Outbound First Message
 
 ---
 

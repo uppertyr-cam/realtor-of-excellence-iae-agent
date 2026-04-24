@@ -1,26 +1,27 @@
 // ============================================================
-// WORKFLOW 00 — Conversational Starter
-// Instant Appointment Engine — 00 — Conversational Starter
+// Outbound First Message
+// Instant Appointment Engine — Outbound First Message
 //
 // Entry: POST /webhook/crm  (from any CRM)
-// Handles: normalise → validate → hours → drip queue → send
+// Handles: normalise → queue → send → fallback
 // ============================================================
 
 import { db } from '../db/client'
 import { getClientConfig } from '../config/client-config'
 import { normalizeWebhook } from '../crm/normalizer'
 import { writeToCrm } from '../crm/adapter'
-import { validateWhatsAppNumber, sendWhatsAppMessage, sendWhatsAppTemplate } from '../channels/whatsapp'
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../channels/whatsapp'
 import { sendSmsMessage } from '../channels/sms'
 import { isWithinWorkingHours } from '../utils/working-hours'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
 import type { Contact, InboundWebhook, SendResult } from '../utils/types'
+import axios from 'axios'
 
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleCrmWebhook(rawPayload: any, crmType: string) {
-  logger.info('IAE-00 — Outbound First Message triggered', { crmType })
+  logger.info('Outbound First Message triggered', { crmType })
 
   // ── Step 1: Normalise payload ───────────────────────────────
   let webhook: InboundWebhook
@@ -79,70 +80,13 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
   // ── Step 5: Channel decision ────────────────────────────────
   const channel = config.channel
 
-  // ── Step 6: WhatsApp validation ─────────────────────────────
+  // ── Step 6: Channel selection ───────────────────────────────
   if (channel === 'whatsapp' || channel === 'whatsapp_sms_fallback') {
     if (!config.wa_phone_number_id || !config.wa_access_token) {
       logger.error('WhatsApp credentials missing', { client_id: config.id })
       return
     }
-
-    // Try all numbers — use first one that is on WhatsApp
-    const numbersToTry = webhook.phone_numbers?.length
-      ? webhook.phone_numbers
-      : [webhook.phone_number]
-
-    let validNumber: string | null = null
-    for (const num of numbersToTry) {
-      const isValid = await validateWhatsAppNumber(num, config.wa_phone_number_id, config.wa_access_token)
-      if (isValid) {
-        validNumber = num
-        break
-      }
-      logger.info('Number not on WhatsApp — trying next', { contact_id: webhook.contact_id, number: num })
-    }
-
-    if (!validNumber) {
-      if (channel === 'whatsapp') {
-        // Hard fail — tag and update CRM
-        logger.info('No numbers on WhatsApp — tagging', { contact_id: webhook.contact_id })
-        await db.query(
-          `UPDATE contacts SET workflow_stage='closed', tags=array_append(tags,'non_whatsapp_number') WHERE id=$1`,
-          [webhook.contact_id]
-        )
-        await writeToCrm(
-          {
-            contact_id: webhook.contact_id,
-            tags_add: ['non_whatsapp_number'],
-            note: `IAE: No numbers registered on WhatsApp. Tried: ${numbersToTry.join(', ')}. Webhook received from ${webhook.crm_type}.`,
-          },
-          config,
-          webhook.crm_callback_url
-        )
-        return
-      }
-      // Fallback to SMS using original primary number
-      logger.info('No numbers on WhatsApp — falling back to SMS', { contact_id: webhook.contact_id })
-      await db.query(`UPDATE contacts SET channel='sms' WHERE id=$1`, [webhook.contact_id])
-    } else {
-      // If the winning number differs from the primary, update it on the contact
-      if (validNumber !== webhook.phone_number) {
-        logger.info('Switched to alternate WhatsApp number', { contact_id: webhook.contact_id, number: validNumber })
-        await db.query(
-          `UPDATE contacts SET phone_number=$1, channel='whatsapp' WHERE id=$2`,
-          [validNumber, webhook.contact_id]
-        )
-        await writeToCrm(
-          {
-            contact_id: webhook.contact_id,
-            note: `Cameron AI System: WhatsApp validation completed. The primary number on file (${webhook.phone_number}) is not registered on WhatsApp. The following number was used instead: ${validNumber}. All messages will be sent to this number going forward.`,
-          },
-          config,
-          webhook.crm_callback_url
-        )
-      } else {
-        await db.query(`UPDATE contacts SET channel='whatsapp' WHERE id=$1`, [webhook.contact_id])
-      }
-    }
+    await db.query(`UPDATE contacts SET channel='whatsapp' WHERE id=$1`, [webhook.contact_id])
   } else {
     await db.query(`UPDATE contacts SET channel='sms' WHERE id=$1`, [webhook.contact_id])
   }
@@ -267,12 +211,14 @@ async function sendFirstMessage(job: any, config: any) {
 
   // Send via correct channel
   const channel = contact.channel || config.channel
+  let targetPhone = contact.phone_number
+  let deliveryChannel: 'whatsapp' | 'sms' = channel === 'sms' ? 'sms' : 'whatsapp'
   let result: SendResult
 
   if (channel === 'whatsapp' && config.wa_first_message_template_name) {
     result = await sendWithRetry(() =>
       sendWhatsAppTemplate(
-        contact.phone_number,
+        targetPhone,
         config.wa_first_message_template_name!,
         [contact.first_name || '', contact.last_name || ''],
         config.wa_phone_number_id!,
@@ -282,7 +228,7 @@ async function sendFirstMessage(job: any, config: any) {
   } else if (channel === 'whatsapp') {
     result = await sendWithRetry(() =>
       sendWhatsAppMessage(
-        contact.phone_number, message,
+        targetPhone, message,
         config.wa_phone_number_id, config.wa_access_token
       )
     )
@@ -295,6 +241,68 @@ async function sendFirstMessage(job: any, config: any) {
     )
   }
 
+  if (!result.success && channel === 'whatsapp') {
+    const fallback = await tryAlternateFollowUpBossNumbers(contact, config, message)
+    if (fallback) {
+      targetPhone = fallback.phoneNumber
+      result = fallback.result
+
+      await db.query(
+        `UPDATE contacts SET phone_number=$1, updated_at=NOW() WHERE id=$2`,
+        [targetPhone, contact.id]
+      )
+
+      await writeToCrm(
+        {
+          contact_id: contact.id,
+          note: `Cameron AI System: Primary WhatsApp number failed for first message. Switched to alternate Follow Up Boss number ${targetPhone}.`,
+        },
+        config,
+        contact.crm_callback_url
+      )
+    }
+  }
+
+  if (!result.success && channel === 'whatsapp' && config.channel === 'whatsapp_sms_fallback') {
+    logger.warn('WhatsApp send failed — falling back to SMS', {
+      contact_id: contact.id,
+      phone_number: targetPhone,
+      error: result.error,
+    })
+
+    const smsResult = await sendWithRetry(() =>
+      sendSmsMessage(
+        targetPhone,
+        message,
+        config.sms_account_sid,
+        config.sms_auth_token,
+        config.sms_from_number
+      )
+    )
+
+    if (smsResult.success) {
+      result = smsResult
+      deliveryChannel = 'sms'
+      await db.query(
+        `UPDATE contacts
+         SET channel='sms',
+             tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['non_whatsapp_number'])),
+             updated_at=NOW()
+         WHERE id=$1`,
+        [contact.id]
+      )
+      await writeToCrm(
+        {
+          contact_id: contact.id,
+          tags_add: ['non_whatsapp_number'],
+          note: `Outbound First Message: WhatsApp delivery failed on all available numbers, so the first message was sent via SMS instead.`,
+        },
+        config,
+        contact.crm_callback_url
+      )
+    }
+  }
+
   if (!result.success) {
     logger.error('First message send failed after retries', { contact_id: contact.id })
     alertEmail('First message failed', { contact_id: contact.id })
@@ -302,14 +310,30 @@ async function sendFirstMessage(job: any, config: any) {
       `UPDATE outbound_queue SET status='failed', error=$1 WHERE id=$2`,
       [result.error, job.id]
     )
+
+    const exhaustedFollowUpBossNumbers = channel === 'whatsapp' && isFollowUpBossContact(contact)
+    const failedTags = exhaustedFollowUpBossNumbers
+      ? ['send_failed', 'non_whatsapp_number']
+      : ['send_failed']
+
     await db.query(
       `UPDATE contacts
        SET workflow_stage='closed',
-           tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['send_failed']))
+           tags=ARRAY(SELECT DISTINCT UNNEST(tags || $2::text[]))
        WHERE id=$1`,
-      [contact.id]
+      [contact.id, failedTags]
     )
-    await writeToCrm({ contact_id: contact.id, tags_add: ['send_failed'], note: `IAE: First message failed — ${result.error}` }, config, contact.crm_callback_url)
+    await writeToCrm(
+      {
+        contact_id: contact.id,
+        tags_add: failedTags,
+        note: exhaustedFollowUpBossNumbers
+          ? `IAE: First message failed on all Follow Up Boss WhatsApp numbers — ${result.error}`
+          : `IAE: First message failed — ${result.error}`,
+      },
+      config,
+      contact.crm_callback_url
+    )
     return
   }
 
@@ -338,7 +362,7 @@ async function sendFirstMessage(job: any, config: any) {
   await db.query(
     `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type)
      VALUES ($1,$2,'outbound',$3,$4,'first_message')`,
-    [contact.id, config.id, channel, message]
+    [contact.id, config.id, deliveryChannel, message]
   )
 
   // ── CRM Callback ──────────────────────────────────────────
@@ -346,7 +370,7 @@ async function sendFirstMessage(job: any, config: any) {
     {
       contact_id: contact.id,
       tags_add: ['first_message_sent', 'database_reactivation', 'ai_database_reactivation', 'follow_ups_scheduled'],
-      note: `IAE: First message sent via ${channel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}\nCRM Source: ${contact.crm_source}`,
+      note: `Outbound First Message: First message sent via ${deliveryChannel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}\nCRM Source: ${contact.crm_source}`,
       fields: {
         first_message_sent: message,
         ai_memory: message,
@@ -372,8 +396,67 @@ async function sendFirstMessage(job: any, config: any) {
   )
 
   logger.info('First message sent + CRM updated', {
-    contact_id: contact.id, channel, message_id: result.message_id,
+    contact_id: contact.id, channel: deliveryChannel, message_id: result.message_id,
   })
+}
+
+function isFollowUpBossContact(contact: Contact): boolean {
+  const source = (contact.crm_source || '').toLowerCase()
+  return source === 'followupboss' || source === 'fub'
+}
+
+async function tryAlternateFollowUpBossNumbers(
+  contact: Contact,
+  config: any,
+  message: string
+): Promise<{ phoneNumber: string; result: SendResult } | null> {
+  if (!isFollowUpBossContact(contact) || !config.crm_api_key) {
+    return null
+  }
+
+  const base = config.crm_base_url || 'https://api.followupboss.com/v1'
+  const auth = { username: config.crm_api_key, password: '' }
+
+  try {
+    const response = await axios.get(`${base}/people/${contact.id}`, { auth, timeout: 15_000 })
+    const alternateNumbers = ((response.data?.phones || []) as Array<{ value?: string }>)
+      .map((phone) => phone.value?.trim())
+      .filter((phone): phone is string => !!phone && phone !== contact.phone_number)
+
+    for (const phoneNumber of [...new Set(alternateNumbers)]) {
+      logger.info('Trying alternate Follow Up Boss number after WhatsApp send failure', {
+        contact_id: contact.id,
+        phone_number: phoneNumber,
+      })
+
+      const send = config.wa_first_message_template_name
+        ? () => sendWhatsAppTemplate(
+            phoneNumber,
+            config.wa_first_message_template_name!,
+            [contact.first_name || '', contact.last_name || ''],
+            config.wa_phone_number_id!,
+            config.wa_access_token!
+          )
+        : () => sendWhatsAppMessage(
+            phoneNumber,
+            message,
+            config.wa_phone_number_id!,
+            config.wa_access_token!
+          )
+
+      const result = await sendWithRetry(send)
+      if (result.success) {
+        return { phoneNumber, result }
+      }
+    }
+  } catch (err: any) {
+    logger.warn('Could not fetch alternate Follow Up Boss numbers', {
+      contact_id: contact.id,
+      error: err.message,
+    })
+  }
+
+  return null
 }
 
 // ─── RETRY WRAPPER ───────────────────────────────────────────

@@ -1,5 +1,5 @@
 // ============================================================
-// WORKFLOW 03 — Bump Handler
+// Bump Handler
 // Instant Appointment Engine — 03
 //
 // Owns: bump scheduling, bump sending (24h/48h/72h), bump close (73h)
@@ -224,4 +224,3 @@ async function processBumpCloseJob(job: any) {
 
   logger.info('Bump close fired — no reply after 3 bumps', { contact_id: contact.id })
 }
-

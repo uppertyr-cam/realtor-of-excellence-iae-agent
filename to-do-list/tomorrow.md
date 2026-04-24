@@ -70,7 +70,7 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
 
 ## Code Side — Bug Fix: Duplicate AI Messages in ai_memory
 
-Each AI reply is currently stored twice in `ai_memory` (once in IAE-01, once in IAE-02). Needs investigation and fix in `src/workflows/inbound-reply-handler.ts` and `src/workflows/ai-send-router.ts`.
+Each AI reply is currently stored twice in `ai_memory` (once in Inbound Reply Handler, once in AI Response Send + Keyword Routing). Needs investigation and fix in `src/workflows/inbound-reply-handler.ts` and `src/workflows/ai-send-router.ts`.
 
 ---
 

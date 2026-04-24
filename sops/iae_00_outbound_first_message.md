@@ -1,4 +1,4 @@
-# Workflow: IAE-00 — Outbound First Message
+# Workflow: Outbound First Message
 
 ## Objective
 When a new contact is pushed into the system via the CRM webhook, validate their WhatsApp number, add them to the outbound queue, and send the first message respecting working hours, daily send limits, and send intervals.

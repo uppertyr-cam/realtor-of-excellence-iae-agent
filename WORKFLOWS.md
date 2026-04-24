@@ -4,7 +4,7 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 
 ---
 
-## IAE-00 — Outbound First Message
+## Outbound First Message
 
 **File:** `src/workflows/outbound-first-message.ts`
 **Trigger:** `POST /webhook/crm`
@@ -46,16 +46,13 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 ### Step 6 — Upsert contact
 
 - `INSERT INTO contacts ... ON CONFLICT (id) DO UPDATE` with all normalised fields
-- Sets `workflow_stage = 'pending'`, `channel = config.channel`
+- Sets `workflow_stage = 'pending'`
 
-### Step 7 — WhatsApp number validation *(only if channel = 'whatsapp' or 'whatsapp_sms_fallback')*
+### Step 7 — Channel selection
 
-- Iterate `phone_numbers[]` (or single `phone_number`) from InboundWebhook in order
-- For each: call `validateWhatsAppNumber(number, config.wa_phone_number_id, config.wa_access_token)`
-  - VALIDATES → update `contact.phone_number` to this number, `contact.channel = 'whatsapp'`, break
-  - FAILS → try next number
-- ALL FAIL + channel = `'whatsapp_sms_fallback'` → update `contact.channel = 'sms'`, continue
-- ALL FAIL + channel = `'whatsapp'` → log warning, continue (send will fail at step 5b below)
+- If `config.channel` is `'whatsapp'` or `'whatsapp_sms_fallback'`, set `contact.channel = 'whatsapp'`
+- If `config.channel` is `'sms'`, set `contact.channel = 'sms'`
+- WhatsApp availability is determined by the actual send result later, not by a Meta pre-validation endpoint
 
 ### Step 8 — Queue first message
 
@@ -110,6 +107,12 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 2. channel = 'whatsapp' → `sendWhatsAppMessage()`
 3. channel = 'sms' → `sendSmsMessage()`
 
+**Step 3a — WhatsApp fallback rules**
+- If the first WhatsApp send fails for a Follow Up Boss contact, fetch alternate phone numbers from Follow Up Boss and try them one by one
+- If one alternate number succeeds, update `contact.phone_number` to that working number and continue
+- If all WhatsApp numbers fail and the client channel is `whatsapp_sms_fallback`, retry the first message via SMS
+- Only mark `non_whatsapp_number` after all WhatsApp options are exhausted
+
 **Step 4 — Retry wrapper (`sendWithRetry`, maxRetries=3)**
 - Attempt 1 → FAIL → wait **1,000ms** → Attempt 2 → FAIL → wait **2,000ms** → Attempt 3 → FAIL → return failed `SendResult`
 
@@ -144,7 +147,7 @@ Three workflows plus a scheduler. All timing values are exact from source code.
 
 ---
 
-## IAE-01 — Inbound Reply Handler
+## Inbound Reply Handler
 
 **File:** `src/workflows/inbound-reply-handler.ts`
 **Trigger:** `POST /webhook/whatsapp` or `POST /webhook/sms`
@@ -282,7 +285,7 @@ Meta and Twilio require fast ACK — return before processing
 - `INSERT INTO ai_responses (contact_id, client_id, response_text, channel, status='pending')`
 - Append to `contact.ai_memory`: `"AI: {responseText}"`
 
-**Step 3** — Trigger IAE-02
+**Step 3** — Trigger AI Response Send + Keyword Routing
 - Dynamic import → `handleAIResponseReady(contactId, keyword, scheduledAt, chatHistory)`
 
 **ON FAILURE:**
@@ -302,10 +305,10 @@ Meta and Twilio require fast ACK — return before processing
 
 ---
 
-## IAE-02 — AI Response Send + Keyword Routing
+## AI Response Send + Keyword Routing
 
 **File:** `src/workflows/ai-send-router.ts`
-**Trigger:** Called inline by IAE-01 (`handleAIResponseReady(contactId, routedKeyword?, scheduledAt?, chatHistory?)`)
+**Trigger:** Called inline by Inbound Reply Handler (`handleAIResponseReady(contactId, routedKeyword?, scheduledAt?, chatHistory?)`)
 
 ---
 
@@ -374,7 +377,7 @@ Meta and Twilio require fast ACK — return before processing
 
 ### Step 10 — Keyword detection
 
-- Primary: use `routedKeyword` passed from IAE-01 (Claude tool call result)
+- Primary: use `routedKeyword` passed from Inbound Reply Handler (Claude tool call result)
 - Fallback: `detectKeyword(responseText)` — text scan:
 
 | Phrase in response text | Keyword |
@@ -423,7 +426,7 @@ Meta and Twilio require fast ACK — return before processing
 ### Every Tick (60s) — in order
 
 ```
-1. processDripQueue()          IAE-00: sends pending first messages
+1. processDripQueue()          Outbound First Message: sends pending first messages
 2. processFollowUpQueue()      sends day-7 / day-14 / day-21 follow-ups
 3. processBumpQueue()          sends 24h / 48h / 72h bump messages
 4. processBumpCloseQueue()     fires bump_close at 73h
@@ -499,13 +502,13 @@ All queue processors use `FOR UPDATE SKIP LOCKED LIMIT 10` — safe for concurre
 
 | Trigger | Workflow | What happens |
 |---------|---------|-------------|
-| First message send fails after 3 retries | IAE-00 `sendFirstMessage()` | CRM note written. Manual follow-up required. |
-| AI generation fails after 3 retries | IAE-01 `triggerAIGeneration()` | `notifyStageAgent()` called — agent receives WhatsApp/SMS alert |
+| First message send fails after 3 retries | Outbound First Message `sendFirstMessage()` | CRM note written. Manual follow-up required. |
+| AI generation fails after 3 retries | Inbound Reply Handler `triggerAIGeneration()` | `notifyStageAgent()` called — agent receives WhatsApp/SMS alert |
 | Voice note download or transcription fails | `POST /webhook/whatsapp` | `notifyStageAgent()` called — agent receives alert |
-| `manual_takeover` tag present on reply | IAE-01 `routeContact()` | `notifyStageAgent()` called — agent takes over conversation |
-| `renting` keyword detected | IAE-02 `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
-| `senior_team_member` keyword detected | IAE-02 `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
-| `interested_in_purchasing` keyword detected | IAE-02 `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
-| `already_purchased` keyword detected | IAE-02 `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
-| Loop counter exceeded (`loop_counter > max`) | IAE-01 `routeContact()` | Contact silently stops. No agent notification. Manual review via CRM or dashboard. |
+| `manual_takeover` tag present on reply | Inbound Reply Handler `routeContact()` | `notifyStageAgent()` called — agent takes over conversation |
+| `renting` keyword detected | AI Response Send + Keyword Routing `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
+| `senior_team_member` keyword detected | AI Response Send + Keyword Routing `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
+| `interested_in_purchasing` keyword detected | AI Response Send + Keyword Routing `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
+| `already_purchased` keyword detected | AI Response Send + Keyword Routing `handleKeyword()` | `notifyStageAgent()` called + CRM tag written |
+| Loop counter exceeded (`loop_counter > max`) | Inbound Reply Handler `routeContact()` | Contact silently stops. No agent notification. Manual review via CRM or dashboard. |
 | Unknown phone number sends a message | `POST /webhook/whatsapp` or `/sms` | Server log only. No notification. |

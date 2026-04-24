@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 -- ─── OUTBOUND QUEUE ──────────────────────────────────────────
--- Drip queue for Workflow 00 — first messages
+-- Drip queue for Outbound First Message — first messages
 CREATE TABLE IF NOT EXISTS outbound_queue (
   id            SERIAL PRIMARY KEY,
   client_id     TEXT NOT NULL REFERENCES clients(id),
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS outbound_queue (
 );
 
 -- ─── MESSAGE BUFFER ──────────────────────────────────────────
--- Debounce buffer for Workflow 01 — inbound messages
+-- Debounce buffer for Inbound Reply Handler — inbound messages
 CREATE TABLE IF NOT EXISTS message_buffer (
   id            SERIAL PRIMARY KEY,
   contact_id    TEXT NOT NULL REFERENCES contacts(id),
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS message_buffer (
 );
 
 -- ─── AI RESPONSES ────────────────────────────────────────────
--- Stores generated AI replies ready for Workflow 02 to send
+-- Stores generated AI replies ready for AI Response Send + Keyword Routing to send
 CREATE TABLE IF NOT EXISTS ai_responses (
   id            SERIAL PRIMARY KEY,
   contact_id    TEXT NOT NULL REFERENCES contacts(id),

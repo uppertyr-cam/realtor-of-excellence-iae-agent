@@ -457,10 +457,10 @@ Duplicate check — contacts table
 UPSERT contacts                              Postgres
   │
   ▼
-validateWhatsAppNumber()                     src/channels/whatsapp.ts
-  │  Tries phone_numbers[] in order
-  │  VALIDATES → update contact.phone_number + channel
-  │  ALL FAIL → fallback to SMS (if whatsapp_sms_fallback)
+Set contact.channel from client config          src/workflows/outbound-first-message.ts
+  │  WhatsApp clients start on WhatsApp
+  │  Delivery success determines whether to stay on WhatsApp
+  │  Failures can retry alternate Follow Up Boss numbers or fall back to SMS
   ▼
 INSERT outbound_queue                        Postgres
   (message_type='first_message', status='pending')

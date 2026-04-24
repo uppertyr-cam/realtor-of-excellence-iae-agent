@@ -26,7 +26,7 @@ Starts automatically on server boot via `startScheduler()`. First tick fires aft
 ## Tick Order (every 60 seconds)
 
 ```
-1. processDripQueue()          → IAE-00 first messages
+1. processDripQueue()          → Outbound First Message jobs
 2. processFollowUpQueue()      → day-7 / day-14 / day-21 follow-ups
 3. processBumpQueue()          → 24h / 48h / 72h bump messages
 4. processBumpCloseQueue()     → bump_close at 73h
@@ -53,7 +53,7 @@ All processors use `FOR UPDATE SKIP LOCKED LIMIT 10` — safe if the server rest
 
 ### `processBumpQueue()` — 24h / 48h / 72h *(defined in `bump-handler.ts`)*
 
-Bumps are scheduled after every AI reply (IAE-02) and after every reach-back-out send. They are cancelled when the lead replies.
+Bumps are scheduled after every AI reply (AI Response Send + Keyword Routing) and after every reach-back-out send. They are cancelled when the lead replies.
 
 - Picks up `pending` jobs of type `bump` where `scheduled_at <= NOW()`
 - **Skips contact if:** `workflow_stage` IN (`replied`, `closed`, `completed`) OR tags include `manual_takeover`
@@ -81,7 +81,7 @@ Fires if no lead reply was received after all 3 bumps.
 
 ### `processReachBackOutQueue()`
 
-Fires when Claude scheduled a reach-back-out for a specific date/time (via `route_lead` tool call in IAE-01).
+Fires when Claude scheduled a reach-back-out for a specific date/time (via `route_lead` tool call in Inbound Reply Handler).
 
 - Picks up `pending` jobs of type `reach_back_out` where `scheduled_at <= NOW()`
 - **Skips if:** tags include `manual_takeover` OR `workflow_stage` IN (`closed`, `completed`)
@@ -139,7 +139,7 @@ Required `.env` variables for weekly report:
 | Problem | Fix |
 |---|---|
 | Follow-ups not sending | Check `outbound_queue` for the job — confirm `status='pending'` and `scheduled_at <= NOW()`. Check contact's `workflow_stage` and tags — contacts in `closed`/`completed` or with `manual_takeover` are skipped. |
-| Bumps firing even though lead replied | Check `last_reply_at` on the contact. If the lead replied after the bump was scheduled, the `processBufferedMessages()` step in IAE-01 should have cancelled pending bumps. If not cancelled, check for a DB lock issue at the time of reply. |
+| Bumps firing even though lead replied | Check `last_reply_at` on the contact. If the lead replied after the bump was scheduled, the `processBufferedMessages()` step in Inbound Reply Handler should have cancelled pending bumps. If not cancelled, check for a DB lock issue at the time of reply. |
 | `bump_close` fired but lead did reply | The `last_reply_at > job.created_at` guard should have skipped it. If it fired incorrectly, check the timestamps on the contact and the queue job. |
 | Reach-back-out not firing on scheduled date | Check `outbound_queue` for a row with `message_type='reach_back_out'` and `status='pending'`. If no row exists, Claude did not provide `scheduledAt` in the tool call. If the row exists but is not firing, check `scheduled_at` value and server timezone. |
 | Weekly report not sending | Check `FROM_EMAIL`, `REPORT_EMAIL`, `GMAIL_APP_PASSWORD` are set in `.env`. Gmail App Password must be generated from Google Account → Security → App Passwords (not the account password). |

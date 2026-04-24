@@ -1,13 +1,13 @@
-# Workflow: IAE-02 — AI Response Send + Keyword Routing
+# Workflow: AI Response Send + Keyword Routing
 
 ## Objective
-After IAE-01 generates an AI response, send the message to the lead via WhatsApp or SMS, update the CRM, reset the bump clock, and route the contact to the correct pipeline stage based on detected keywords.
+After Inbound Reply Handler generates an AI response, send the message to the lead via WhatsApp or SMS, update the CRM, reset the bump clock, and route the contact to the correct pipeline stage based on detected keywords.
 
 ## File
 `src/workflows/ai-send-router.ts`
 
 ## Trigger
-Called inline by IAE-01 — `handleAIResponseReady(contactId, keyword?, scheduledAt?, chatHistory?)`
+Called inline by Inbound Reply Handler — `handleAIResponseReady(contactId, keyword?, scheduledAt?, chatHistory?)`
 
 ---
 
@@ -71,7 +71,7 @@ Called inline by IAE-01 — `handleAIResponseReady(contactId, keyword?, schedule
    - If response text mentions area / property type / price range / bedrooms → add tag `qualifying_questions`
 
 10. **Keyword detection**
-    - Primary: use `routedKeyword` passed from IAE-01 Claude tool call
+    - Primary: use `routedKeyword` passed from Inbound Reply Handler Claude tool call
     - Fallback: `detectKeyword(responseText)` — text scan (see table below)
 
 11. **Handle keyword** → `handleKeyword()`
@@ -125,7 +125,7 @@ Called inline by IAE-01 — `handleAIResponseReady(contactId, keyword?, schedule
 ---
 
 ## Notes
-- This workflow is called inline by IAE-01 — it is not an HTTP endpoint and does not have its own webhook.
+- This workflow is called inline by Inbound Reply Handler — it is not an HTTP endpoint and does not have its own webhook.
 - The bump clock resets on **every AI reply**, not just on keyword detection. If a lead keeps replying, bumps never fire.
 - `detectKeyword()` and `prompts/conversation.txt` must stay in sync — if you add a new keyword phrase to the prompt, add the matching phrase to `detectKeyword()` in `ai-send-router.ts`.
 - The goodbye killswitch is a hard stop — no message is sent when it fires. This is intentional.

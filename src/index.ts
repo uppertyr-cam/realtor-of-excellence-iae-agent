@@ -31,7 +31,7 @@ app.get('/health', (_req, res) => {
 })
 
 // ════════════════════════════════════════════════════════════
-// WORKFLOW 00 ENTRY — CRM Webhook
+// Outbound First Message Entry — CRM Webhook
 // Any CRM POSTs here to start the reactivation sequence
 // POST /webhook/crm
 // Expected body: { contact_id, phone_number, first_name,
@@ -57,9 +57,9 @@ app.post('/webhook/crm', async (req, res) => {
     // Respond immediately — process async so CRM doesn't time out
     res.json({ received: true, contact_id: payload.contact_id })
 
-    // Run IAE-00 in background
+    // Run Outbound First Message in background
     handleCrmWebhook(payload, crm_type || 'generic').catch((err) => {
-      logger.error('IAE-00 error', { error: err.message, contact_id: payload.contact_id })
+      logger.error('Outbound First Message error', { error: err.message, contact_id: payload.contact_id })
     })
 
   } catch (err: any) {
@@ -69,7 +69,7 @@ app.post('/webhook/crm', async (req, res) => {
 })
 
 // ════════════════════════════════════════════════════════════
-// WORKFLOW 01 ENTRY — Inbound WhatsApp Message
+// Inbound Reply Handler Entry — Inbound WhatsApp Message
 // Meta calls this when a contact replies on WhatsApp
 // GET  /webhook/whatsapp  — Meta verification challenge
 // POST /webhook/whatsapp  — Inbound message
@@ -204,7 +204,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
         logger.info('Voice note transcribed successfully', { contactId, length: transcribedText.length })
 
-        // Trigger IAE-01 with transcribed text
+        // Trigger Inbound Reply Handler with transcribed text
         await handleInboundMessage({
           contact_id:   contactId,
           message:      messageWithPrefix,
@@ -235,7 +235,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
     logger.info('WhatsApp message received', { from: phone, preview: messageText.slice(0, 50) })
 
-    // Trigger IAE-01
+    // Trigger Inbound Reply Handler
     await handleInboundMessage({
       contact_id:   contactId,
       message:      messageText,
@@ -250,7 +250,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
 })
 
 // ════════════════════════════════════════════════════════════
-// WORKFLOW 01 ENTRY — Inbound SMS Message
+// Inbound Reply Handler Entry — Inbound SMS Message
 // Twilio calls this when a contact replies via SMS
 // POST /webhook/sms
 // ════════════════════════════════════════════════════════════
@@ -292,7 +292,7 @@ app.post('/webhook/sms', async (req, res) => {
 
     const contactId = contactRes.rows[0].id
 
-    // Trigger IAE-01
+    // Trigger Inbound Reply Handler
     await handleInboundMessage({
       contact_id:   contactId,
       message:      body,
@@ -457,7 +457,7 @@ app.post('/admin/dashboard/refresh/:clientId', requireAdminSecret, async (req, r
   }
 })
 
-// Fetch contact(s) from FUB and feed into IAE-00
+// Fetch contact(s) from FUB and feed into Outbound First Message
 // Body: { search?, contact_id?, limit?, client_id? }
 // - search: find by name/email (triggers first match)
 // - contact_id: fetch exact FUB person ID

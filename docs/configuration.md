@@ -59,4 +59,4 @@ Template variables:
 - `{{first_message}}` — the original first message sent
 - `{{current_date}}` — today's date in Africa/Johannesburg timezone, injected by `generate.ts` at call time (e.g. "Wednesday, 9 April 2026") — allows Claude to calculate relative dates like "next Thursday"
 
-**Critical:** The prompt must instruct Claude to use exact keyword phrases (`not interested`, `Goodbye`, etc.) because Workflow 02 scans for these exact strings.
+**Critical:** The prompt must instruct Claude to use exact keyword phrases (`not interested`, `Goodbye`, etc.) because AI Response Send + Keyword Routing scans for these exact strings.
