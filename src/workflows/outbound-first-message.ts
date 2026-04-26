@@ -221,7 +221,7 @@ async function sendFirstMessage(job: any, config: any) {
       sendWhatsAppTemplate(
         targetPhone,
         config.wa_first_message_template_name!,
-        [contact.first_name || '', contact.last_name || ''],
+        [contact.first_name || '', config.agent_name || ''],
         config.wa_phone_number_id!,
         config.wa_access_token!
       )
