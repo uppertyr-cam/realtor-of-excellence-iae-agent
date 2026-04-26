@@ -15,6 +15,8 @@ import { sendSmsMessage } from '../channels/sms'
 import { isWithinWorkingHours } from '../utils/working-hours'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
+import { updateDashboard } from '../reports/dashboard'
+import { updateMetrics } from '../reports/weekly-report'
 import type { Contact, InboundWebhook, SendResult } from '../utils/types'
 import axios from 'axios'
 
@@ -406,6 +408,9 @@ async function sendFirstMessage(job: any, config: any) {
   logger.info('First message sent + CRM updated', {
     contact_id: contact.id, channel: deliveryChannel, message_id: result.message_id,
   })
+
+  updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
 }
 
 function isFollowUpBossContact(contact: Contact): boolean {
