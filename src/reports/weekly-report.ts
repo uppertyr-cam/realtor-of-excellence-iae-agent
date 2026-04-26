@@ -247,10 +247,10 @@ const TAB_ORDER = [
   'Monthly Metrics',
   '4 Month Metrics',
   '8 Month Metrics',
-  'Yearly Metrics',
+  '12 Month Metrics',
 ]
 
-const STALE_TABS = ['1 Month Overview', '4 Month Overview', '8 Month Overview']
+const STALE_TABS = ['1 Month Overview', '4 Month Overview', '8 Month Overview', 'Yearly Metrics']
 
 async function cleanupAndReorderTabs(sheets: any, spreadsheetId: string) {
   const metaRes = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties)' })
@@ -554,9 +554,10 @@ export async function updateMetrics(clientId: string): Promise<void> {
     eightStart.setMonth(eightStart.getMonth() - 8)
     await buildMetricsTab(sheets, masterId, clientId, '8 Month Metrics', eightStart, now, '8 month')
 
-    // Year to date
-    const yearStart = new Date(now.getFullYear(), 0, 1)
-    await buildMetricsTab(sheets, masterId, clientId, 'Yearly Metrics', yearStart, now, 'year')
+    // Rolling 12 months
+    const twelveStart = new Date(now)
+    twelveStart.setMonth(twelveStart.getMonth() - 12)
+    await buildMetricsTab(sheets, masterId, clientId, '12 Month Metrics', twelveStart, now, '12 month')
 
     await cleanupAndReorderTabs(sheets, masterId)
     logger.info('Metrics updated', { clientId })
@@ -600,7 +601,7 @@ export async function buildYearlyMetrics() {
     const freshRes = await db.query(`SELECT dashboard_sheet_id FROM clients WHERE id=$1`, [clientRow.id])
     const masterId: string = freshRes.rows[0]?.dashboard_sheet_id || ''
     if (!masterId) continue
-    await buildMetricsTab(sheets, masterId, clientRow.id, 'Yearly Metrics', yearStart, yearEnd, 'year')
+    await buildMetricsTab(sheets, masterId, clientRow.id, '12 Month Metrics', yearStart, yearEnd, '12 month')
   }
   logger.info('Yearly metrics updated')
 }
