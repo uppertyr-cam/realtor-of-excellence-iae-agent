@@ -271,9 +271,8 @@ async function buildWorkflowStatusTab(sheets: any, spreadsheetId: string, client
   const res = await db.query(
     `SELECT
        c.id, c.first_name, c.last_name, c.phone_number,
-       c.workflow_stage, c.tags,
+       c.workflow_stage, c.tags, c.ai_memory,
        c.first_message_at, c.last_message_at, c.last_reply_at,
-       c.followup1_sent_at, c.followup2_sent_at, c.followup3_sent_at,
        c.bump_index,
        q.message_type  AS next_type,
        q.scheduled_at  AS next_due
@@ -314,9 +313,10 @@ async function buildWorkflowStatusTab(sheets: any, spreadsheetId: string, client
     if (tags.includes('bump_no_reply'))            return '😶 No Reply After Bumps'
     const mem: string = c.ai_memory || ''
     if (mem.includes('LEAD:'))                     return '💬 In Conversation'
-    if (c.followup3_sent_at)                       return '📅 Followup 3 Sent — Awaiting Reply'
-    if (c.followup2_sent_at)                       return '📅 Followup 2 Sent — Awaiting Reply'
-    if (c.followup1_sent_at)                       return '📅 Followup 1 Sent — Awaiting Reply'
+    const stage: string = c.workflow_stage || ''
+    if (stage === 'followup3_sent')                return '📅 Followup 3 Sent — Awaiting Reply'
+    if (stage === 'followup2_sent')                return '📅 Followup 2 Sent — Awaiting Reply'
+    if (stage === 'followup1_sent')                return '📅 Followup 1 Sent — Awaiting Reply'
     if (c.first_message_at)                        return '📩 First Message Sent — Awaiting Reply'
     return '⏳ Queued — Not Yet Sent'
   }
