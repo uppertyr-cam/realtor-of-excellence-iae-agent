@@ -13,7 +13,7 @@ import { sendWhatsAppMessage } from '../channels/whatsapp'
 import { sendSmsMessage } from '../channels/sms'
 import { logger } from '../utils/logger'
 import { updateDashboard } from '../reports/dashboard'
-import { buildWeeklyReport } from '../reports/weekly-report'
+import { buildWeeklyReport, updateMetrics } from '../reports/weekly-report'
 import { generateContactNote } from '../ai/generate'
 import type { DetectedKeyword, SendResult } from '../utils/types'
 import { scheduleBumps, cancelBumps, cancelPendingBumps } from './bump-handler'
@@ -161,6 +161,7 @@ async function handleGoodbyeKillswitch(contact: any, config: any, responseText: 
   )
 
   updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
   buildWeeklyReport().catch(() => {})
   logger.info('Goodbye killswitch complete', { contactId: contact.id })
 }
@@ -306,8 +307,9 @@ async function handleKeyword(
 
   logger.info('Keyword routing complete', { contactId, keyword })
 
-  // Update live dashboard — fire and forget (non-fatal)
+  // Update live dashboard + metrics — fire and forget (non-fatal)
   updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
 
   // Update weekly report sheet when conversation reaches a terminal outcome
   if (keyword !== 'none') {

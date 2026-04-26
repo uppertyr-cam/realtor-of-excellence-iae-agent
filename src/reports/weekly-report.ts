@@ -521,6 +521,50 @@ export async function buildWeeklyReport(): Promise<string> {
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
 }
 
+// ─── LIVE METRICS UPDATE ─────────────────────────────────────
+// Called after every message event — current-period windows (this week, this month, YTD, rolling)
+export async function updateMetrics(clientId: string): Promise<void> {
+  try {
+    const auth = getAuth()
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    const freshRes = await db.query(`SELECT dashboard_sheet_id FROM clients WHERE id=$1`, [clientId])
+    const masterId: string = freshRes.rows[0]?.dashboard_sheet_id || ''
+    if (!masterId) return
+
+    const now = new Date()
+
+    // Current week: Monday 00:00 → now
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1))
+    weekStart.setHours(0, 0, 0, 0)
+    await buildMetricsTab(sheets, masterId, clientId, 'Weekly Metrics', weekStart, now, 'week')
+
+    // Current month: 1st → now
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    await buildMetricsTab(sheets, masterId, clientId, 'Monthly Metrics', monthStart, now, 'month')
+
+    // Rolling 4 months
+    const fourStart = new Date(now)
+    fourStart.setMonth(fourStart.getMonth() - 4)
+    await buildMetricsTab(sheets, masterId, clientId, '4 Month Metrics', fourStart, now, '4 month')
+
+    // Rolling 8 months
+    const eightStart = new Date(now)
+    eightStart.setMonth(eightStart.getMonth() - 8)
+    await buildMetricsTab(sheets, masterId, clientId, '8 Month Metrics', eightStart, now, '8 month')
+
+    // Year to date
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+    await buildMetricsTab(sheets, masterId, clientId, 'Yearly Metrics', yearStart, now, 'year')
+
+    await cleanupAndReorderTabs(sheets, masterId)
+    logger.info('Metrics updated', { clientId })
+  } catch (err: any) {
+    logger.error('Metrics update failed — non-fatal', { clientId, error: err.message })
+  }
+}
+
 // ─── MONTHLY METRICS ─────────────────────────────────────────
 // Called on the 1st of each month — shows the previous calendar month
 export async function buildMonthlyMetrics() {

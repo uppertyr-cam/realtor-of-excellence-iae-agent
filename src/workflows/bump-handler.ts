@@ -12,7 +12,7 @@ import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../channels/whatsapp'
 import { sendSmsMessage } from '../channels/sms'
 import { writeToCrm } from '../crm/adapter'
 import { updateDashboard } from '../reports/dashboard'
-import { buildWeeklyReport } from '../reports/weekly-report'
+import { buildWeeklyReport, updateMetrics } from '../reports/weekly-report'
 import { generateBumpMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
@@ -220,6 +220,7 @@ async function processBumpCloseJob(job: any) {
   await db.query(`UPDATE outbound_queue SET status='sent', sent_at=NOW() WHERE id=$1`, [job.id])
 
   updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
   buildWeeklyReport().catch(() => {})
 
   logger.info('Bump close fired — no reply after 3 bumps', { contact_id: contact.id })

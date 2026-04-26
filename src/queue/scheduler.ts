@@ -5,7 +5,7 @@ import { sendSmsMessage } from '../channels/sms'
 import { writeToCrm } from '../crm/adapter'
 import { processDripQueue } from '../workflows/outbound-first-message'
 import { processBumpQueue, processBumpCloseQueue, scheduleBumps } from '../workflows/bump-handler'
-import { sendWeeklyReport, buildWeeklyReport, buildMonthlyMetrics, buildYearlyMetrics } from '../reports/weekly-report'
+import { sendWeeklyReport, buildWeeklyReport, buildMonthlyMetrics, buildYearlyMetrics, updateMetrics } from '../reports/weekly-report'
 import { updateDashboard } from '../reports/dashboard'
 import { generateReachBackOutMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
@@ -363,6 +363,7 @@ async function processReachBackOutJob(job: any) {
   await scheduleBumps(contact.id, config.id)
 
   updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
 
   logger.info('reach_back_out sent — bumps scheduled', { contact_id: contact.id, channel })
 }
