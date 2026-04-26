@@ -108,7 +108,7 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
 export async function processDripQueue() {
   // Get all clients that have pending items
   const clientsRes = await db.query(
-    `SELECT DISTINCT client_id FROM outbound_queue WHERE status='pending' AND scheduled_at <= NOW()`
+    `SELECT DISTINCT client_id FROM outbound_queue WHERE status='pending' AND scheduled_at <= NOW() AND message_type='first_message'`
   )
 
   for (const row of clientsRes.rows) {
@@ -122,6 +122,7 @@ export async function processDripQueue() {
            SELECT oq.id FROM outbound_queue oq
            JOIN contacts c ON c.id = oq.contact_id
            WHERE oq.client_id=$1 AND oq.status='pending' AND oq.scheduled_at<=NOW()
+             AND oq.message_type='first_message'
              AND c.phone_number = ANY($2)
            ORDER BY oq.created_at ASC LIMIT 1
            FOR UPDATE SKIP LOCKED
@@ -156,7 +157,7 @@ export async function processDripQueue() {
       `UPDATE outbound_queue SET status='processing'
        WHERE id = (
          SELECT id FROM outbound_queue
-         WHERE client_id=$1 AND status='pending' AND scheduled_at<=NOW()
+         WHERE client_id=$1 AND status='pending' AND scheduled_at<=NOW() AND message_type='first_message'
          ORDER BY created_at ASC LIMIT 1
          FOR UPDATE SKIP LOCKED
        ) RETURNING *`,
