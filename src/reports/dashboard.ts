@@ -233,7 +233,186 @@ export async function updateDashboard(clientId: string): Promise<void> {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: setupRequests } })
     logger.info('Dashboard updated', { clientId, url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` })
 
+    // ── Workflow Status tab ───────────────────────────────────
+    await buildWorkflowStatusTab(sheets, spreadsheetId, clientId)
+
   } catch (err: any) {
     logger.error('Dashboard update failed — non-fatal', { clientId, error: err.message })
   }
+}
+
+// ─── WORKFLOW STATUS TAB ─────────────────────────────────────
+// One row per contact, one column per field.
+// Shows exactly where each contact is in the pipeline and what fires next.
+async function buildWorkflowStatusTab(sheets: any, spreadsheetId: string, clientId: string) {
+  const HEADERS = [
+    'Name', 'Phone', 'Current Stage', 'First Message Sent',
+    'Last We Sent', 'Last Lead Reply', 'Next Action', 'Next Action Due', 'Days Since Last Contact',
+  ]
+  const COL_WIDTHS = [160, 140, 220, 170, 170, 170, 170, 170, 180]
+  const TAB = 'Workflow Status'
+
+  // Get or create tab
+  const metaRes = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties)' })
+  const existing = metaRes.data.sheets?.find((s: any) => s.properties?.title === TAB)
+  let sheetId: number
+  if (existing) {
+    sheetId = existing.properties!.sheetId!
+    await sheets.spreadsheets.values.clear({ spreadsheetId, range: `'${TAB}'` })
+  } else {
+    const addRes = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: TAB } } }] },
+    })
+    sheetId = addRes.data.replies![0].addSheet!.properties!.sheetId!
+  }
+
+  // Fetch contacts + their next pending queue action in one query
+  const res = await db.query(
+    `SELECT
+       c.id, c.first_name, c.last_name, c.phone_number,
+       c.workflow_stage, c.tags,
+       c.first_message_at, c.last_message_at, c.last_reply_at,
+       c.followup1_sent_at, c.followup2_sent_at, c.followup3_sent_at,
+       c.bump_index,
+       q.message_type  AS next_type,
+       q.scheduled_at  AS next_due
+     FROM contacts c
+     LEFT JOIN LATERAL (
+       SELECT message_type, scheduled_at
+       FROM outbound_queue
+       WHERE contact_id = c.id AND status = 'pending'
+       ORDER BY scheduled_at ASC
+       LIMIT 1
+     ) q ON true
+     WHERE c.client_id = $1
+     ORDER BY c.updated_at DESC`,
+    [clientId]
+  )
+
+  const fmt = (d: Date | null) =>
+    d ? new Date(d).toLocaleString('en-ZA', { dateStyle: 'short', timeStyle: 'short' }) : '—'
+
+  const daysSince = (d: Date | null) => {
+    if (!d) return '—'
+    const diff = (Date.now() - new Date(d).getTime()) / 86_400_000
+    return diff < 1 ? '< 1' : Math.floor(diff).toString()
+  }
+
+  function stageLabel(c: any): string {
+    const tags: string[] = c.tags || []
+    if (tags.includes('goodbye_killswitch'))       return '🚫 DND'
+    if (tags.includes('not_interested'))           return '❌ Not Interested'
+    if (tags.includes('already_purchased'))        return '🏠 Already Purchased'
+    if (tags.includes('interested_in_purchasing')) return '🔥 Hot — Interested in Buying'
+    if (tags.includes('renting'))                  return '🏢 Interested in Renting'
+    if (tags.includes('reach_back_out_sent'))      return '🔄 Reach Back Out Sent'
+    if (tags.includes('reach_back_out'))           return '📅 Reach Back Out Scheduled'
+    if (c.bump_index >= 3)                         return '🔔 Bump 3 Sent — No Reply'
+    if (c.bump_index === 2)                        return '🔔 Bump 2 Sent — Awaiting Reply'
+    if (c.bump_index === 1)                        return '🔔 Bump 1 Sent — Awaiting Reply'
+    if (tags.includes('bump_no_reply'))            return '😶 No Reply After Bumps'
+    const mem: string = c.ai_memory || ''
+    if (mem.includes('LEAD:'))                     return '💬 In Conversation'
+    if (c.followup3_sent_at)                       return '📅 Followup 3 Sent — Awaiting Reply'
+    if (c.followup2_sent_at)                       return '📅 Followup 2 Sent — Awaiting Reply'
+    if (c.followup1_sent_at)                       return '📅 Followup 1 Sent — Awaiting Reply'
+    if (c.first_message_at)                        return '📩 First Message Sent — Awaiting Reply'
+    return '⏳ Queued — Not Yet Sent'
+  }
+
+  function nextActionLabel(type: string | null): string {
+    if (!type) return '—'
+    const map: Record<string, string> = {
+      first_message: 'First Message',
+      followup1:     'Followup 1 (Day 7)',
+      followup2:     'Followup 2 (Day 14)',
+      followup3:     'Followup 3 (Day 21)',
+      bump:          `Bump`,
+      bump_close:    'Bump Close (No Reply Note)',
+      reach_back_out: 'Reach Back Out',
+    }
+    return map[type] ?? type
+  }
+
+  const rows: any[][] = [HEADERS]
+  for (const c of res.rows) {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '—'
+    const lastContact = c.last_message_at || c.first_message_at
+    rows.push([
+      name,
+      c.phone_number,
+      stageLabel(c),
+      fmt(c.first_message_at),
+      fmt(c.last_message_at),
+      fmt(c.last_reply_at),
+      nextActionLabel(c.next_type),
+      fmt(c.next_due),
+      daysSince(lastContact),
+    ])
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${TAB}'!A1`,
+    valueInputOption: 'RAW',
+    requestBody: { values: rows },
+  })
+
+  const numDataRows = rows.length - 1
+  const formatRequests: any[] = [
+    // Header: dark bg, white bold
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
+        cell: {
+          userEnteredFormat: {
+            backgroundColor: { red: 0.102, green: 0.102, blue: 0.180 },
+            textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 11 },
+            verticalAlignment: 'MIDDLE',
+          },
+        },
+        fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment)',
+      },
+    },
+    // Freeze header row
+    {
+      updateSheetProperties: {
+        properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+        fields: 'gridProperties.frozenRowCount',
+      },
+    },
+    // Auto filter
+    ...(numDataRows > 0 ? [{
+      setBasicFilter: {
+        filter: {
+          range: { sheetId, startRowIndex: 0, endRowIndex: numDataRows + 1, startColumnIndex: 0, endColumnIndex: HEADERS.length },
+        },
+      },
+    }] : []),
+    // Column widths
+    ...COL_WIDTHS.map((px, col) => ({
+      updateDimensionProperties: {
+        range: { sheetId, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 },
+        properties: { pixelSize: px },
+        fields: 'pixelSize',
+      },
+    })),
+    // Zebra stripe data rows
+    ...Array.from({ length: numDataRows }, (_, r) => ({
+      repeatCell: {
+        range: { sheetId, startRowIndex: r + 1, endRowIndex: r + 2 },
+        cell: {
+          userEnteredFormat: {
+            backgroundColor: r % 2 === 0
+              ? { red: 1, green: 1, blue: 1 }
+              : { red: 0.957, green: 0.965, blue: 0.984 },
+          },
+        },
+        fields: 'userEnteredFormat.backgroundColor',
+      },
+    })),
+  ]
+
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: formatRequests } })
 }

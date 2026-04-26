@@ -242,6 +242,7 @@ async function buildMetricsTab(
 
 const TAB_ORDER = [
   'Dashboard',
+  'Workflow Status',
   'Weekly Report',
   'Weekly Metrics',
   'Monthly Metrics',
