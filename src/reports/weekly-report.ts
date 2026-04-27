@@ -211,7 +211,7 @@ async function buildMetricsTab(
             range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
             cell: {
               userEnteredFormat: {
-                backgroundColor: { red: 0.102, green: 0.102, blue: 0.180 },
+                backgroundColor: { red: 0.043, green: 0.071, blue: 0.125 },
                 textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 13 },
                 verticalAlignment: 'MIDDLE',
               }
@@ -224,7 +224,7 @@ async function buildMetricsTab(
             range: { sheetId, startRowIndex: 2, endRowIndex: 3 },
             cell: {
               userEnteredFormat: {
-                backgroundColor: { red: 0.2, green: 0.2, blue: 0.35 },
+                backgroundColor: { red: 0.082, green: 0.122, blue: 0.212 },
                 textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true },
               }
             },
@@ -378,7 +378,7 @@ export async function buildWeeklyReport(): Promise<string> {
         range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
         cell: {
           userEnteredFormat: {
-            backgroundColor: { red: 0.102, green: 0.102, blue: 0.180 },
+            backgroundColor: { red: 0.043, green: 0.071, blue: 0.125 },
             textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 11 },
             verticalAlignment: 'MIDDLE',
           }
@@ -629,43 +629,43 @@ export async function sendWeeklyReport() {
   })
 
   const footer = `
-    <div style="background:#0d0d1a;border-radius:0 0 12px 12px;padding:28px 32px;margin-top:0;">
+    <div style="background:#0B1220;border-radius:0 0 12px 12px;padding:28px 32px;margin-top:0;">
       <table style="width:100%;border-collapse:collapse;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-family:'Courier New',monospace;color:#00e5ff;font-size:18px;font-weight:bold;letter-spacing:2px;">
+            <div style="font-family:'Courier New',monospace;color:#5CE1E6;font-size:18px;font-weight:bold;letter-spacing:2px;">
               CAMERON BRITT
             </div>
-            <div style="font-family:'Courier New',monospace;color:#7b2ff7;font-size:11px;letter-spacing:4px;text-transform:uppercase;margin-top:3px;">
+            <div style="font-family:'Courier New',monospace;color:#9CA3AF;font-size:11px;letter-spacing:4px;text-transform:uppercase;margin-top:3px;">
               Chief Operating Executive
             </div>
-            <div style="width:48px;height:2px;background:linear-gradient(90deg,#7b2ff7,#00e5ff);margin:10px 0 14px 0;border-radius:2px;"></div>
+            <div style="width:48px;height:2px;background:#5CE1E6;margin:10px 0 14px 0;border-radius:2px;"></div>
             <table style="border-collapse:collapse;">
               <tr>
-                <td style="padding:3px 0;color:#00e5ff;font-family:'Courier New',monospace;font-size:12px;">📞</td>
-                <td style="padding:3px 0 3px 8px;color:#ccc;font-family:Arial,sans-serif;font-size:12px;">+27 76 153 6498</td>
+                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">📞</td>
+                <td style="padding:3px 0 3px 8px;color:#9CA3AF;font-family:Arial,sans-serif;font-size:12px;">+27 76 153 6498</td>
               </tr>
               <tr>
-                <td style="padding:3px 0;color:#00e5ff;font-family:'Courier New',monospace;font-size:12px;">✉️</td>
+                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">✉️</td>
                 <td style="padding:3px 0 3px 8px;font-family:Arial,sans-serif;font-size:12px;">
-                  <a href="mailto:cameronbritt111@gmail.com" style="color:#00e5ff;text-decoration:none;">cameronbritt111@gmail.com</a>
+                  <a href="mailto:cameronbritt111@gmail.com" style="color:#5CE1E6;text-decoration:none;">cameronbritt111@gmail.com</a>
                 </td>
               </tr>
               <tr>
-                <td style="padding:3px 0;color:#00e5ff;font-family:'Courier New',monospace;font-size:12px;">🌐</td>
+                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">🌐</td>
                 <td style="padding:3px 0 3px 8px;font-family:Arial,sans-serif;font-size:12px;">
-                  <a href="https://hyperzenai.com" style="color:#00e5ff;text-decoration:none;">hyperzenai.com</a>
+                  <a href="https://hyperzenai.com" style="color:#5CE1E6;text-decoration:none;">hyperzenai.com</a>
                 </td>
               </tr>
             </table>
           </td>
           <td style="text-align:right;vertical-align:middle;padding-left:24px;">
-            <div style="font-family:'Courier New',monospace;color:#7b2ff7;font-size:10px;letter-spacing:3px;text-transform:uppercase;line-height:1.8;">
+            <div style="font-family:'Courier New',monospace;color:#9CA3AF;font-size:10px;letter-spacing:3px;text-transform:uppercase;line-height:1.8;">
               AUTOMATE SMARTER.<br/>
-              <span style="color:#00e5ff;">GROW FASTER.</span>
+              <span style="color:#5CE1E6;">GROW FASTER.</span>
             </div>
-            <div style="margin-top:10px;font-family:'Courier New',monospace;font-size:9px;color:#333;letter-spacing:2px;">
-              ▸ POWERED BY HYPERZEN AI ◂
+            <div style="margin-top:10px;font-family:'Courier New',monospace;font-size:9px;color:#9CA3AF;letter-spacing:2px;">
+              ▸ POWERED BY UPPERTYR ◂
             </div>
           </td>
         </tr>
@@ -678,24 +678,24 @@ export async function sendWeeklyReport() {
     subject: `${clientName} Weekly Client Report — ${now}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#222;box-shadow:0 4px 24px rgba(0,0,0,0.12);border-radius:12px;overflow:hidden;">
-        <div style="background:linear-gradient(135deg,#0d0d1a 0%,#1a0a2e 50%,#0a1628 100%);padding:32px 32px 28px 32px;">
-          <div style="font-family:'Courier New',monospace;font-size:10px;letter-spacing:4px;color:#7b2ff7;text-transform:uppercase;margin-bottom:8px;">Weekly Intelligence Report</div>
+        <div style="background:#0B1220;padding:32px 32px 28px 32px;">
+          <div style="font-family:'Courier New',monospace;font-size:10px;letter-spacing:4px;color:#5CE1E6;text-transform:uppercase;margin-bottom:8px;">Weekly Intelligence Report</div>
           <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">${clientName}</h1>
-          <h2 style="color:#00e5ff;margin:4px 0 0 0;font-size:15px;font-weight:400;letter-spacing:1px;">Weekly Client Report</h2>
-          <div style="margin-top:16px;display:inline-block;background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.2);border-radius:4px;padding:4px 12px;">
-            <span style="font-family:'Courier New',monospace;font-size:11px;color:#aaa;letter-spacing:1px;">${now}</span>
+          <h2 style="color:#5CE1E6;margin:4px 0 0 0;font-size:15px;font-weight:400;letter-spacing:1px;">Weekly Client Report</h2>
+          <div style="margin-top:16px;display:inline-block;background:rgba(92,225,230,0.08);border:1px solid rgba(92,225,230,0.2);border-radius:4px;padding:4px 12px;">
+            <span style="font-family:'Courier New',monospace;font-size:11px;color:#9CA3AF;letter-spacing:1px;">${now}</span>
           </div>
         </div>
         <div style="background:#f8f9fc;padding:32px 32px 24px 32px;">
-          <p style="margin-top:0;color:#444;font-size:15px;">Hi Cameron,</p>
-          <p style="color:#555;font-size:14px;line-height:1.6;">Your weekly lead activity report is ready. All contact details, outcomes, and conversation history are in the sheet below.</p>
+          <p style="margin-top:0;color:#374151;font-size:15px;">Hi Cameron,</p>
+          <p style="color:#4B5563;font-size:14px;line-height:1.6;">Your weekly lead activity report is ready. All contact details, outcomes, and conversation history are in the sheet below.</p>
           <div style="text-align:center;margin:28px 0;">
-            <a href="${url}" style="display:inline-block;background:linear-gradient(135deg,#7b2ff7,#0a84ff);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:0.5px;box-shadow:0 4px 16px rgba(123,47,247,0.4);">
+            <a href="${url}" style="display:inline-block;background:#5CE1E6;color:#0B1220;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:800;font-size:15px;letter-spacing:0.5px;box-shadow:0 4px 16px rgba(92,225,230,0.25);">
               📊 &nbsp;Open Full Report in Google Sheets
             </a>
           </div>
-          <div style="background:#fff;border:1px solid #e8eaf0;border-radius:8px;padding:16px 20px;margin-top:8px;">
-            <p style="margin:0;font-size:12px;color:#888;font-family:'Courier New',monospace;letter-spacing:0.5px;">
+          <div style="background:#fff;border:1px solid rgba(92,225,230,0.2);border-radius:8px;padding:16px 20px;margin-top:8px;">
+            <p style="margin:0;font-size:12px;color:#9CA3AF;font-family:'Courier New',monospace;letter-spacing:0.5px;">
               ▸ Dashboard tab — live pipeline view &nbsp;|&nbsp; Weekly Report tab — full contact list with outcomes
             </p>
           </div>
