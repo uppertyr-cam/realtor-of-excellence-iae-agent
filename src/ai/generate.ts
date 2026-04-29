@@ -28,9 +28,13 @@ const ROUTE_LEAD_TOOL: Anthropic.Tool = {
           'reach_back_out',
           'senior_team_member',
           'interested_in_purchasing',
+          'buyer_qualified',
           'already_purchased',
         ],
-        description: 'The routing outcome for this lead',
+        description:
+          'The routing outcome for this lead. ' +
+          'interested_in_purchasing: contact expressed interest in buying but has NOT completed full qualification (budget/timeline/pre-approval not confirmed). ' +
+          'buyer_qualified: contact has completed the full qualification conversation and confirmed their budget, timeline, and readiness to purchase.',
       },
       scheduled_at: {
         type: 'string',
@@ -108,13 +112,7 @@ ${params.latestMessage}
           model: 'claude-sonnet-4-6',
           max_tokens: 2000,
           thinking: { type: 'enabled', budget_tokens: 1024 } as any,
-          system: [
-            {
-              type: 'text',
-              text: populatedPrompt,
-              cache_control: { type: 'ephemeral' },
-            } as any,
-          ],
+          system: populatedPrompt,
           tools: [ROUTE_LEAD_TOOL, ASK_AGENT_TOOL],
           tool_choice: { type: 'auto' },
           messages: [{ role: 'user', content: userMessage }],
@@ -167,7 +165,7 @@ ${params.latestMessage}
 }
 
 export async function generateContactNote(chatHistory: string): Promise<string> {
-  const promptPath = path.resolve(process.cwd(), 'prompts/ai-note-taker.txt')
+  const promptPath = path.resolve(process.cwd(), 'skills/prompts/ai-note-taker.txt')
   let promptTemplate: string
   try {
     promptTemplate = fs.readFileSync(promptPath, 'utf8')
@@ -195,7 +193,7 @@ export async function generateBumpMessage(params: {
   bumpNumber: number
   conversationHistory: string
 }): Promise<string> {
-  const promptPath = path.resolve(process.cwd(), 'prompts/bumps.txt')
+  const promptPath = path.resolve(process.cwd(), 'skills/prompts/bumps.txt')
   let promptTemplate: string
   try {
     promptTemplate = fs.readFileSync(promptPath, 'utf8')
@@ -237,7 +235,7 @@ export async function generateBumpMessage(params: {
 export async function generateReachBackOutMessage(params: {
   conversationHistory: string
 }): Promise<string> {
-  const promptPath = path.resolve(process.cwd(), 'prompts/reach-back-out.txt')
+  const promptPath = path.resolve(process.cwd(), 'skills/prompts/reach-back-out.txt')
   let promptTemplate: string
   try {
     promptTemplate = fs.readFileSync(promptPath, 'utf8')
