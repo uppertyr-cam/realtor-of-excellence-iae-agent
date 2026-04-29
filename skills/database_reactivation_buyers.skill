@@ -1,0 +1,27 @@
+# Skill: Database Reactivation — Buyers
+
+Reactivate dormant leads in the CRM via automated WhatsApp/SMS outreach.
+
+## Trigger
+A contact exists in the CRM with no recent activity and has not been contacted within the configured drip window.
+
+## Context Check
+- Contact has a valid phone number
+- Contact is within working hours (checked via `src/utils/working-hours.ts`)
+- No active lock on the contact (DB lock table)
+- Client config loaded from `clients` table via `src/config/client-config.ts`
+
+## Action
+1. Queue a first message job in the drip queue (`queue` table, type: `first_message`)
+2. Scheduler picks up the job on its 60s tick
+3. AI generates a personalised opening message using `skills/prompts/conversation.txt`
+4. Message sent via WhatsApp (Meta) with SMS fallback (Twilio)
+5. CRM updated with outreach tag and contact note
+
+## Output
+- Lead receives a personalised WhatsApp/SMS message
+- CRM contact tagged as contacted
+- Dashboard and Weekly Report updated with new outreach count
+
+## Status
+Active — running in production on the Contabo VPS via PM2.

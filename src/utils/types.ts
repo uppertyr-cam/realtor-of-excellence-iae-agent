@@ -45,6 +45,7 @@ export interface Contact {
   webhook_received_at: Date | null
   first_reply_at: Date | null
   total_tokens_used: number
+  total_cost_usd: number
   last_delivery_status: string | null
   last_read_at: Date | null
   crm_sync_failures: number
@@ -80,6 +81,7 @@ export interface ClientConfig {
   wa_bump3_template_name: string | null  // deprecated: kept for backwards compat
   wa_bump_template_names: string[][]  // nested: [group][variation]
   wa_reach_back_out_template_name: string | null
+  wa_marketing_template_cost_usd: number
   wa_phone_number_id: string | null
   wa_access_token: string | null
   sms_from_number: string | null
@@ -131,5 +133,6 @@ export type DetectedKeyword =
   | 'reach_back_out'
   | 'senior_team_member'
   | 'interested_in_purchasing'
+  | 'buyer_qualified'
   | 'already_purchased'
   | 'none'

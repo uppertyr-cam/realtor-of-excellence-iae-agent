@@ -1,0 +1,161 @@
+import { db } from '../db/client'
+
+type ConversationFilter = 'all' | 'unread' | 'read'
+
+function normalizeFilter(filter?: string): ConversationFilter {
+  if (filter === 'unread' || filter === 'read') return filter
+  return 'all'
+}
+
+function getOutcomeLabel(tags: string[] = []): string {
+  if (tags.includes('not_interested')) return 'Not interested'
+  if (tags.includes('already_purchased')) return 'Already bought'
+  if (tags.includes('renting')) return 'Wants to rent'
+  if (tags.includes('buyer_qualified')) return 'Buyer qualified'
+  if (tags.includes('interested_in_purchasing')) return 'Interested'
+  if (tags.includes('reach_back_out')) return 'Reach back out'
+  if (tags.includes('reach_back_out_sent')) return 'Reach back out sent'
+  if (tags.includes('bump_no_reply')) return 'No reply after bumps'
+  return 'In progress'
+}
+
+function getNextActionLabel(type: string | null): string {
+  if (!type) return 'No pending execution'
+  const map: Record<string, string> = {
+    first_message: 'First message',
+    followup1: 'Follow-up 1',
+    followup2: 'Follow-up 2',
+    followup3: 'Follow-up 3',
+    bump: 'Bump',
+    bump_close: 'Bump close',
+    reach_back_out: 'Reach back out',
+  }
+  return map[type] || type
+}
+
+export async function listConversations(search = '', filter?: string) {
+  const term = `%${search.trim().toLowerCase()}%`
+  const normalizedFilter = normalizeFilter(filter)
+  const result = await db.query(
+    `SELECT
+       c.id AS contact_id,
+       c.client_id,
+       cl.name AS client_name,
+       COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.phone_number, c.id) AS contact_name,
+       c.phone_number,
+       c.channel,
+       c.workflow_stage,
+       c.tags,
+       c.updated_at,
+       c.last_delivery_status,
+       c.pending_question,
+       c.pending_answer,
+       queue_next.message_type AS next_action_type,
+       queue_next.scheduled_at AS next_action_due,
+       last_msg.content AS last_message,
+       last_msg.direction AS last_direction,
+       last_msg.channel AS last_message_channel,
+       last_msg.message_type AS last_message_type,
+       last_msg.created_at AS last_message_at
+     FROM contacts c
+     JOIN clients cl ON cl.id = c.client_id
+     LEFT JOIN LATERAL (
+       SELECT content, direction, channel, message_type, created_at
+       FROM message_log ml
+       WHERE ml.contact_id = c.id
+       ORDER BY ml.created_at DESC, ml.id DESC
+       LIMIT 1
+     ) last_msg ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT message_type, scheduled_at
+       FROM outbound_queue oq
+       WHERE oq.contact_id = c.id
+         AND oq.status = 'pending'
+       ORDER BY oq.scheduled_at ASC, oq.id ASC
+       LIMIT 1
+     ) queue_next ON TRUE
+     WHERE (
+       $1 = '%%'
+       OR LOWER(COALESCE(c.first_name, '')) LIKE $1
+       OR LOWER(COALESCE(c.last_name, '')) LIKE $1
+       OR LOWER(COALESCE(c.phone_number, '')) LIKE $1
+       OR LOWER(cl.name) LIKE $1
+     )
+     AND (
+       $2 = 'all'
+       OR ($2 = 'unread' AND 'awaiting_agent_answer' = ANY(c.tags))
+       OR ($2 = 'read' AND 'awaiting_faq_approval' = ANY(c.tags))
+     )
+     ORDER BY COALESCE(last_msg.created_at, c.updated_at) DESC
+     LIMIT 250`,
+    [term, normalizedFilter]
+  )
+
+  return result.rows.map((row) => ({
+    ...row,
+    needs_attention: row.last_direction === 'inbound',
+    workflow_status: getOutcomeLabel(row.tags || []),
+    next_action_label: getNextActionLabel(row.next_action_type || null),
+    agent_question_status:
+      Array.isArray(row.tags) && row.tags.includes('awaiting_agent_answer')
+        ? 'awaiting_agent_reply'
+        : Array.isArray(row.tags) && row.tags.includes('awaiting_faq_approval')
+          ? 'agent_replied'
+          : null,
+  }))
+}
+
+export async function getConversationDetail(contactId: string) {
+  const contactRes = await db.query(
+    `SELECT
+       c.id AS contact_id,
+       c.client_id,
+       cl.name AS client_name,
+       COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.phone_number, c.id) AS contact_name,
+       c.first_name,
+       c.last_name,
+       c.phone_number,
+       c.channel,
+       c.workflow_stage,
+       c.tags,
+       c.last_delivery_status,
+       c.last_read_at,
+       c.pending_question,
+       c.pending_answer,
+       queue_next.message_type AS next_action_type,
+       queue_next.scheduled_at AS next_action_due,
+       c.updated_at
+     FROM contacts c
+     JOIN clients cl ON cl.id = c.client_id
+     LEFT JOIN LATERAL (
+       SELECT message_type, scheduled_at
+       FROM outbound_queue oq
+       WHERE oq.contact_id = c.id
+         AND oq.status = 'pending'
+       ORDER BY oq.scheduled_at ASC, oq.id ASC
+       LIMIT 1
+     ) queue_next ON TRUE
+     WHERE c.id=$1`,
+    [contactId]
+  )
+
+  if (contactRes.rowCount === 0) return null
+
+  const messageRes = await db.query(
+    `SELECT id, direction, channel, content, message_type, created_at
+     FROM message_log
+     WHERE contact_id=$1
+     ORDER BY created_at ASC, id ASC`,
+    [contactId]
+  )
+
+  return {
+    contact: {
+      ...contactRes.rows[0],
+      workflow_status: getOutcomeLabel(contactRes.rows[0].tags || []),
+      next_action_label: getNextActionLabel(contactRes.rows[0].next_action_type || null),
+      is_stuck: !!contactRes.rows[0].next_action_due && new Date(contactRes.rows[0].next_action_due).getTime() < Date.now(),
+    },
+    messages: messageRes.rows,
+  }
+}

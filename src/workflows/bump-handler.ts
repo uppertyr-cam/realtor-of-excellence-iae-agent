@@ -14,8 +14,10 @@ import { writeToCrm } from '../crm/adapter'
 import { updateDashboard } from '../reports/dashboard'
 import { buildWeeklyReport, updateMetrics } from '../reports/weekly-report'
 import { generateBumpMessage } from '../ai/generate'
+import { calcHaikuCost, countLegacyTokens, getWhatsAppMarketingTemplateCostUsd } from '../config/pricing'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
+import { publishInboxEvent } from '../inbox/live-events'
 
 // ─── SCHEDULE 3 BUMPS + BUMP_CLOSE ───────────────────────────
 // Called after every AI reply (ai-send-router) and after reach-back-out send (scheduler)
@@ -109,9 +111,9 @@ async function processBumpJob(job: any) {
   })
 
   const bumpMessages: Record<number, string> = {
-    1: `Hey ${firstName}, just checking in — we were chatting about ${aiPhrase} and I didn't want to leave you hanging.`,
-    2: `Wanted to circle back, ${firstName} — we were busy discussing ${aiPhrase}. Let me know if you've got questions.`,
-    3: `Won't keep nudging after this, ${firstName} - just didn't want you to get stuck on ${aiPhrase}. Reply whenever it suits.`,
+    1: `Hey ${firstName}, just checking in — we were chatting about ${aiPhrase.text} and I didn't want to leave you hanging.`,
+    2: `Wanted to circle back, ${firstName} — we were busy discussing ${aiPhrase.text}. Let me know if you've got questions.`,
+    3: `Won't keep nudging after this, ${firstName} - just didn't want you to get stuck on ${aiPhrase.text}. Reply whenever it suits.`,
   }
   const message = bumpMessages[bumpNumber]
 
@@ -123,7 +125,7 @@ async function processBumpJob(job: any) {
     result = await sendWhatsAppTemplate(
       contact.phone_number,
       waTemplateName,
-      [firstName, aiPhrase],
+      [firstName, aiPhrase.text],
       config.wa_phone_number_id!,
       config.wa_access_token!
     )
@@ -139,8 +141,17 @@ async function processBumpJob(job: any) {
   }
 
   const now = new Date()
+  const templateCostUsd = channel === 'whatsapp' && waTemplateName
+    ? getWhatsAppMarketingTemplateCostUsd(config)
+    : 0
 
-  await db.query(`UPDATE contacts SET bump_index=$1 WHERE id=$2`, [bumpIndex + 1, contact.id])
+  await db.query(
+    `UPDATE contacts SET bump_index=$1,
+       total_tokens_used=total_tokens_used+$2,
+       total_cost_usd=total_cost_usd+$3
+     WHERE id=$4`,
+    [bumpIndex + 1, countLegacyTokens(aiPhrase.usage), calcHaikuCost(aiPhrase.usage) + templateCostUsd, contact.id]
+  )
   await db.query(`UPDATE outbound_queue SET status='sent', sent_at=NOW() WHERE id=$1`, [job.id])
 
   await writeToCrm(
@@ -158,6 +169,12 @@ async function processBumpJob(job: any) {
      VALUES ($1,$2,'outbound',$3,$4,'bump')`,
     [contact.id, config.id, channel, message]
   )
+  publishInboxEvent({
+    type: 'message_created',
+    contactId: contact.id,
+    clientId: config.id,
+    timestamp: new Date().toISOString(),
+  })
 
   updateDashboard(contact.client_id).catch(() => {})
   updateMetrics(contact.client_id).catch(() => {})

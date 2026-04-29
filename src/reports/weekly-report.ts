@@ -115,6 +115,7 @@ async function buildMetricsTab(
        ROUND(AVG(EXTRACT(EPOCH FROM (first_message_at - webhook_received_at))/60)::numeric, 1)  AS avg_speed_to_lead_mins,
        ROUND(AVG(EXTRACT(EPOCH FROM (first_reply_at - first_message_at))/3600)::numeric, 1)     AS avg_time_to_reply_hrs,
        SUM(total_tokens_used)                                                                   AS total_tokens,
+       SUM(total_cost_usd)                                                                      AS total_cost_usd,
        SUM(crm_sync_failures)                                                                   AS crm_failures
      FROM contacts
      WHERE client_id=$1 AND created_at >= $2 AND created_at < $3`,
@@ -171,7 +172,7 @@ async function buildMetricsTab(
   ]
 
   const totalTokens = Number(kpi.total_tokens || 0)
-  const approxCost = (totalTokens / 1_000_000 * 18).toFixed(2)
+  const totalCostUsd = Number(kpi.total_cost_usd || 0)
   const periodName = periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1)
 
   const rows: any[][] = [
@@ -183,7 +184,7 @@ async function buildMetricsTab(
     ['Avg speed-to-lead (mins)', kpi.avg_speed_to_lead_mins ?? '—'],
     ['Avg time to first reply (hrs)', kpi.avg_time_to_reply_hrs ?? '—'],
     ['Total AI tokens used', totalTokens],
-    ['Approx AI cost (USD)', `$${approxCost}`],
+    ['Total tracked cost (USD)', `$${totalCostUsd.toFixed(4)}`],
     ['CRM sync failures', kpi.crm_failures ?? 0],
     [],
     ['Touchpoint Reply Rates'],
@@ -498,23 +499,6 @@ export async function buildWeeklyReport(): Promise<string> {
     // Apply all formatting for this tab to its master spreadsheet
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: masterId, requestBody: { requests: requests.splice(0) } })
 
-    // ── Weekly Metrics tab (previous Mon–Sun) + rolling windows
-    const now = new Date()
-    const weekEnd = new Date(now)
-    weekEnd.setDate(now.getDate() - (now.getDay() === 0 ? 0 : now.getDay()))
-    weekEnd.setHours(0, 0, 0, 0)
-    const weekStart = new Date(weekEnd)
-    weekStart.setDate(weekEnd.getDate() - 7)
-    await buildMetricsTab(sheets, masterId, clientRow.id, 'Weekly Metrics', weekStart, weekEnd, 'week')
-
-    // Rolling windows — 4 and 8 month, update every Monday
-    for (const p of [{ title: '4 Month Metrics', months: 4 }, { title: '8 Month Metrics', months: 8 }]) {
-      const end = new Date(now)
-      const start = new Date(now)
-      start.setMonth(start.getMonth() - p.months)
-      await buildMetricsTab(sheets, masterId, clientRow.id, p.title, start, end, `${p.months} month`)
-    }
-
     // Clean up old Overview tabs if they exist, then reorder all tabs
     await cleanupAndReorderTabs(sheets, masterId)
   }
@@ -612,9 +596,31 @@ export async function sendWeeklyReport() {
 
   const url = await buildWeeklyReport()
 
-  // Get client name for subject line
-  const clientRes = await db.query(`SELECT name FROM clients ORDER BY name LIMIT 1`)
+  // Get client details for subject line and email summary metrics
+  const clientRes = await db.query(`SELECT id, name FROM clients ORDER BY name LIMIT 1`)
+  const clientId = clientRes.rows[0]?.id || ''
   const clientName = clientRes.rows[0]?.name || 'Client'
+
+  const summaryRes = clientId
+    ? await db.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE 'interested_in_purchasing' = ANY(tags)) AS interested_count,
+           COUNT(*) FILTER (WHERE 'already_purchased' = ANY(tags)) AS already_bought_count,
+           COUNT(*) FILTER (WHERE 'bump_no_reply' = ANY(tags)) AS no_reply_count,
+           COUNT(*) FILTER (WHERE 'renting' = ANY(tags)) AS renting_count,
+           COUNT(*) FILTER (WHERE 'not_interested' = ANY(tags)) AS not_interested_count
+         FROM contacts
+         WHERE client_id=$1`,
+        [clientId]
+      )
+    : { rows: [{}] }
+
+  const summary = summaryRes.rows[0] || {}
+  const interestedCount = Number(summary.interested_count || 0)
+  const alreadyBoughtCount = Number(summary.already_bought_count || 0)
+  const noReplyCount = Number(summary.no_reply_count || 0)
+  const rentingCount = Number(summary.renting_count || 0)
+  const notInterestedCount = Number(summary.not_interested_count || 0)
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -629,43 +635,23 @@ export async function sendWeeklyReport() {
   })
 
   const footer = `
-    <div style="background:#0B1220;border-radius:0 0 12px 12px;padding:28px 32px;margin-top:0;">
+    <div style="background:#0B1220;padding:28px 36px 34px 36px;border-top:1px solid rgba(92,225,230,0.18);">
       <table style="width:100%;border-collapse:collapse;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-family:'Courier New',monospace;color:#5CE1E6;font-size:18px;font-weight:bold;letter-spacing:2px;">
-              CAMERON BRITT
+            <div style="font-family:Georgia,'Times New Roman',serif;color:#FFFFFF;font-size:22px;font-weight:700;letter-spacing:0.4px;">
+              UpperTyr
             </div>
-            <div style="font-family:'Courier New',monospace;color:#9CA3AF;font-size:11px;letter-spacing:4px;text-transform:uppercase;margin-top:3px;">
-              Chief Operating Executive
+            <div style="margin-top:8px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#5CE1E6;">
+              Automate smarter, grow faster
             </div>
-            <div style="width:48px;height:2px;background:#5CE1E6;margin:10px 0 14px 0;border-radius:2px;"></div>
-            <table style="border-collapse:collapse;">
-              <tr>
-                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">📞</td>
-                <td style="padding:3px 0 3px 8px;color:#9CA3AF;font-family:Arial,sans-serif;font-size:12px;">+27 76 153 6498</td>
-              </tr>
-              <tr>
-                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">✉️</td>
-                <td style="padding:3px 0 3px 8px;font-family:Arial,sans-serif;font-size:12px;">
-                  <a href="mailto:cameronbritt111@gmail.com" style="color:#5CE1E6;text-decoration:none;">cameronbritt111@gmail.com</a>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:3px 0;color:#5CE1E6;font-family:'Courier New',monospace;font-size:12px;">🌐</td>
-                <td style="padding:3px 0 3px 8px;font-family:Arial,sans-serif;font-size:12px;">
-                  <a href="https://hyperzenai.com" style="color:#5CE1E6;text-decoration:none;">hyperzenai.com</a>
-                </td>
-              </tr>
-            </table>
           </td>
-          <td style="text-align:right;vertical-align:middle;padding-left:24px;">
-            <div style="font-family:'Courier New',monospace;color:#9CA3AF;font-size:10px;letter-spacing:3px;text-transform:uppercase;line-height:1.8;">
-              AUTOMATE SMARTER.<br/>
-              <span style="color:#5CE1E6;">GROW FASTER.</span>
+          <td style="vertical-align:bottom;text-align:right;padding-left:24px;">
+            <div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.7;color:#9CA3AF;">
+              CEO Cameron Britt
             </div>
-            <div style="margin-top:10px;font-family:'Courier New',monospace;font-size:9px;color:#9CA3AF;letter-spacing:2px;">
-              ▸ POWERED BY UPPERTYR ◂
+            <div style="margin-top:4px;font-family:Arial,sans-serif;font-size:12px;line-height:1.7;color:#FFFFFF;">
+              +27 76 153 6498
             </div>
           </td>
         </tr>
@@ -677,30 +663,105 @@ export async function sendWeeklyReport() {
     to: REPORT_EMAIL,
     subject: `${clientName} Weekly Client Report — ${now}`,
     html: `
-      <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#222;box-shadow:0 4px 24px rgba(0,0,0,0.12);border-radius:12px;overflow:hidden;">
-        <div style="background:#0B1220;padding:32px 32px 28px 32px;">
-          <div style="font-family:'Courier New',monospace;font-size:10px;letter-spacing:4px;color:#5CE1E6;text-transform:uppercase;margin-bottom:8px;">Weekly Intelligence Report</div>
-          <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;letter-spacing:-0.5px;">${clientName}</h1>
-          <h2 style="color:#5CE1E6;margin:4px 0 0 0;font-size:15px;font-weight:400;letter-spacing:1px;">Weekly Client Report</h2>
-          <div style="margin-top:16px;display:inline-block;background:rgba(92,225,230,0.08);border:1px solid rgba(92,225,230,0.2);border-radius:4px;padding:4px 12px;">
-            <span style="font-family:'Courier New',monospace;font-size:11px;color:#9CA3AF;letter-spacing:1px;">${now}</span>
-          </div>
-        </div>
-        <div style="background:#f8f9fc;padding:32px 32px 24px 32px;">
-          <p style="margin-top:0;color:#374151;font-size:15px;">Hi Cameron,</p>
-          <p style="color:#4B5563;font-size:14px;line-height:1.6;">Your weekly lead activity report is ready. All contact details, outcomes, and conversation history are in the sheet below.</p>
-          <div style="text-align:center;margin:28px 0;">
-            <a href="${url}" style="display:inline-block;background:#5CE1E6;color:#0B1220;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:800;font-size:15px;letter-spacing:0.5px;box-shadow:0 4px 16px rgba(92,225,230,0.25);">
-              📊 &nbsp;Open Full Report in Google Sheets
-            </a>
-          </div>
-          <div style="background:#fff;border:1px solid rgba(92,225,230,0.2);border-radius:8px;padding:16px 20px;margin-top:8px;">
-            <p style="margin:0;font-size:12px;color:#9CA3AF;font-family:'Courier New',monospace;letter-spacing:0.5px;">
-              ▸ Dashboard tab — live pipeline view &nbsp;|&nbsp; Weekly Report tab — full contact list with outcomes
-            </p>
-          </div>
-        </div>
-        ${footer}
+      <div style="margin:0;padding:32px 16px;background:#E8EDF2;">
+        <table role="presentation" style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td align="center">
+              <table role="presentation" style="width:100%;max-width:720px;border-collapse:collapse;background:#FFFFFF;border:1px solid #D7DEE7;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(11,18,32,0.12);">
+                <tr>
+                  <td style="background:#0B1220;height:8px;font-size:0;line-height:0;">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td style="background:#FFFFFF;padding:26px 36px 30px 36px;border-bottom:1px solid #E2E8F0;">
+                    <table role="presentation" style="width:100%;border-collapse:collapse;">
+                      <tr>
+                        <td style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#5CE1E6;padding-bottom:10px;">
+                          Weekly Client Report
+                        </td>
+                        <td align="right" style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.2px;color:#9CA3AF;padding-bottom:10px;">
+                          ${now}
+                        </td>
+                      </tr>
+                    </table>
+                    <div style="font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:1.08;color:#0B1220;font-weight:700;letter-spacing:-0.8px;">
+                      ${clientName}
+                    </div>
+                    <div style="margin-top:10px;font-family:Arial,sans-serif;font-size:15px;line-height:1.7;color:#4B5563;max-width:540px;">
+                      A concise weekly briefing covering pipeline movement, recent engagement, and the current status of active records.
+                    </div>
+                    <div style="margin-top:22px;width:72px;height:2px;background:#5CE1E6;"></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:20px 36px 0 36px;">
+                    <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:0;background:#F7FAFC;border:1px solid #DCE4EC;border-radius:14px;">
+                      <tr>
+                        <td width="20%" style="padding:16px 12px 16px 18px;border-right:1px solid #E2E8F0;">
+                          <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#9CA3AF;margin-bottom:8px;">Interested</div>
+                          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1;color:#0B1220;">${interestedCount}</div>
+                        </td>
+                        <td width="20%" style="padding:16px 12px 16px 18px;border-right:1px solid #E2E8F0;">
+                          <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#9CA3AF;margin-bottom:8px;">Already Bought</div>
+                          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1;color:#0B1220;">${alreadyBoughtCount}</div>
+                        </td>
+                        <td width="20%" style="padding:16px 12px 16px 18px;border-right:1px solid #E2E8F0;">
+                          <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#9CA3AF;margin-bottom:8px;">Wanting to Rent</div>
+                          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1;color:#0B1220;">${rentingCount}</div>
+                        </td>
+                        <td width="20%" style="padding:16px 12px 16px 18px;border-right:1px solid #E2E8F0;">
+                          <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#9CA3AF;margin-bottom:8px;">Not Interested</div>
+                          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1;color:#0B1220;">${notInterestedCount}</div>
+                        </td>
+                        <td width="20%" style="padding:16px 18px 16px 18px;">
+                          <div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#9CA3AF;margin-bottom:8px;">No Response</div>
+                          <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1;color:#0B1220;">${noReplyCount}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 36px 12px 36px;font-family:Arial,sans-serif;color:#111827;">
+                    <p style="margin:0 0 14px 0;font-size:15px;line-height:1.7;color:#374151;">Good day,</p>
+                    <p style="margin:0;font-size:15px;line-height:1.8;color:#4B5563;">
+                      Your weekly report is ready for review. The attached reporting view consolidates contact activity, disposition status, and conversation history into a single operational record for the week.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:20px 36px 0 36px;">
+                    <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:0;background:#F7FAFC;border:1px solid #DCE4EC;border-radius:14px;">
+                      <tr>
+                        <td style="padding:18px 22px;font-family:Arial,sans-serif;">
+                          <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#5CE1E6;margin-bottom:10px;">Report Coverage</div>
+                          <div style="font-size:14px;line-height:1.8;color:#4B5563;">
+                            Dashboard tab for live pipeline visibility and current movement<br/>
+                            Weekly Report tab for record-level review across all tracked contacts
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:30px 36px 36px 36px;">
+                    <a href="${url}" style="display:inline-block;background:#0B1220;color:#FFFFFF;padding:15px 34px;border-radius:999px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.4px;border:1px solid #5CE1E6;box-shadow:0 10px 24px rgba(11,18,32,0.18);">
+                      Open Weekly Report
+                    </a>
+                    <div style="margin-top:12px;font-family:Arial,sans-serif;font-size:12px;line-height:1.7;color:#9CA3AF;">
+                      Secure Google Sheets access for authorised review
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    ${footer}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
       </div>`,
   })
 

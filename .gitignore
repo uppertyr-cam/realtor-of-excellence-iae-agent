@@ -6,3 +6,7 @@ screenshots/
 .tmp/
 *.sh
 plans/
+data/*.csv
+data/*.json
+data/*.xlsx
+data/*.xls

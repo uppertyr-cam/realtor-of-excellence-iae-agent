@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS clients (
   notification_target   TEXT,
 
   -- AI prompt file path (relative to project root)
-  prompt_file_path      TEXT NOT NULL DEFAULT 'prompts/conversation.txt',
+  prompt_file_path      TEXT NOT NULL DEFAULT 'skills/prompts/conversation.txt',
 
   -- Master Google Sheet ID (created once, reused) — holds Dashboard tab + weekly report tabs
   dashboard_sheet_id    TEXT,
@@ -173,6 +173,27 @@ CREATE INDEX IF NOT EXISTS idx_queue_client ON outbound_queue(client_id, status)
 CREATE INDEX IF NOT EXISTS idx_buffer_contact ON message_buffer(contact_id, received_at);
 CREATE INDEX IF NOT EXISTS idx_ai_responses_contact ON ai_responses(contact_id, status);
 CREATE INDEX IF NOT EXISTS idx_log_contact ON message_log(contact_id);
+
+CREATE TABLE IF NOT EXISTS inbox_users (
+  id            SERIAL PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  display_name  TEXT,
+  is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS inbox_sessions (
+  id            TEXT PRIMARY KEY,
+  user_id       INT NOT NULL REFERENCES inbox_users(id) ON DELETE CASCADE,
+  expires_at    TIMESTAMPTZ NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbox_sessions_user ON inbox_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_inbox_sessions_expiry ON inbox_sessions(expires_at);
 
 -- ─── MIGRATIONS ──────────────────────────────────────────────
 -- Idempotent: safe to re-run on existing databases
@@ -325,5 +346,23 @@ BEGIN
     WHERE table_name='clients' AND column_name='workflow_prompts'
   ) THEN
     ALTER TABLE clients ADD COLUMN workflow_prompts JSONB DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='total_cost_usd'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN total_cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='clients' AND column_name='wa_marketing_template_cost_usd'
+  ) THEN
+    ALTER TABLE clients ADD COLUMN wa_marketing_template_cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0.043600;
   END IF;
 END $$;

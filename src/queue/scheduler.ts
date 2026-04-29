@@ -8,15 +8,17 @@ import { processBumpQueue, processBumpCloseQueue, scheduleBumps } from '../workf
 import { sendWeeklyReport, buildWeeklyReport, buildMonthlyMetrics, buildYearlyMetrics, updateMetrics } from '../reports/weekly-report'
 import { updateDashboard } from '../reports/dashboard'
 import { generateReachBackOutMessage } from '../ai/generate'
+import { calcHaikuCost, countLegacyTokens, getWhatsAppMarketingTemplateCostUsd } from '../config/pricing'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
+import { publishInboxEvent } from '../inbox/live-events'
 
 async function runSchedulerStep(name: string, fn: () => Promise<void>) {
   try {
     await fn()
   } catch (err: any) {
     logger.error('Scheduler step error', { step: name, error: err.message })
-    throw err
+    throw new Error(`[${name}] ${err.message}`)
   }
 }
 
@@ -41,11 +43,15 @@ export function startScheduler() {
 
   // Run immediately on startup
   setTimeout(async () => {
-    await runSchedulerStep('processDripQueue', processDripQueue)
-    await runSchedulerStep('processFollowUpQueue', processFollowUpQueue)
-    await runSchedulerStep('processBumpQueue', processBumpQueue)
-    await runSchedulerStep('processBumpCloseQueue', processBumpCloseQueue)
-    await runSchedulerStep('processReachBackOutQueue', processReachBackOutQueue)
+    try {
+      await runSchedulerStep('processDripQueue', processDripQueue)
+      await runSchedulerStep('processFollowUpQueue', processFollowUpQueue)
+      await runSchedulerStep('processBumpQueue', processBumpQueue)
+      await runSchedulerStep('processBumpCloseQueue', processBumpCloseQueue)
+      await runSchedulerStep('processReachBackOutQueue', processReachBackOutQueue)
+    } catch (err: any) {
+      logger.error('Startup queue flush error', { error: err.message })
+    }
   }, 2000)
 
   // Weekly report — every Monday at 9am Africa/Johannesburg
@@ -232,6 +238,9 @@ async function processFollowUpJob(job: any) {
   }
 
   const now = new Date()
+  const followupTemplateCostUsd = channel === 'whatsapp' && waTemplateName
+    ? getWhatsAppMarketingTemplateCostUsd(config)
+    : 0
   const stageMap: Record<string, string> = {
     followup1: 'followup1_sent',
     followup2: 'followup2_sent',
@@ -244,8 +253,11 @@ async function processFollowUpJob(job: any) {
   }
 
   await db.query(
-    `UPDATE contacts SET ${tsColMap[job.message_type]}=$1, workflow_stage=$2 WHERE id=$3`,
-    [now, stageMap[job.message_type], contact.id]
+    `UPDATE contacts SET ${tsColMap[job.message_type]}=$1,
+       workflow_stage=$2,
+       total_cost_usd=total_cost_usd+$4
+     WHERE id=$3`,
+    [now, stageMap[job.message_type], contact.id, followupTemplateCostUsd]
   )
   await db.query(`UPDATE outbound_queue SET status='sent', sent_at=NOW() WHERE id=$1`, [job.id])
 
@@ -265,6 +277,12 @@ async function processFollowUpJob(job: any) {
      VALUES ($1,$2,'outbound',$3,$4,$5)`,
     [contact.id, config.id, channel, message, job.message_type]
   )
+  publishInboxEvent({
+    type: 'message_created',
+    contactId: contact.id,
+    clientId: config.id,
+    timestamp: new Date().toISOString(),
+  })
 
   updateDashboard(contact.client_id).catch(() => {})
   updateMetrics(contact.client_id).catch(() => {})
@@ -321,7 +339,7 @@ async function processReachBackOutJob(job: any) {
     conversationHistory: contact.ai_memory || '',
   })
 
-  const message = `Hi ${firstName}, it's ${agentName} again from Realtor of Excellence. Just following up as we discussed — ${aiPhrase}. Looking forward to helping you find the right place!`
+  const message = `Hi ${firstName}, it's ${agentName} again from Realtor of Excellence. Just following up as we discussed — ${aiPhrase.text}. Looking forward to helping you find the right place!`
 
   const channel = contact.channel || config.channel
   const waTemplateName = config.wa_reach_back_out_template_name ?? null
@@ -331,7 +349,7 @@ async function processReachBackOutJob(job: any) {
     result = await sendWhatsAppTemplate(
       contact.phone_number,
       waTemplateName,
-      [firstName, agentName, aiPhrase],
+      [firstName, agentName, aiPhrase.text],
       config.wa_phone_number_id!,
       config.wa_access_token!
     )
@@ -347,11 +365,19 @@ async function processReachBackOutJob(job: any) {
   }
 
   const now = new Date()
+  const reachBackOutTemplateCostUsd = channel === 'whatsapp' && waTemplateName
+    ? getWhatsAppMarketingTemplateCostUsd(config)
+    : 0
 
   await db.query(`UPDATE outbound_queue SET status='sent', sent_at=NOW() WHERE id=$1`, [job.id])
   await db.query(
-    `UPDATE contacts SET tags=array_append(tags,'reach_back_out_sent'), updated_at=NOW() WHERE id=$1`,
-    [contact.id]
+    `UPDATE contacts SET
+       tags=array_append(tags,'reach_back_out_sent'),
+       total_tokens_used=total_tokens_used+$1,
+       total_cost_usd=total_cost_usd+$2,
+       updated_at=NOW()
+     WHERE id=$3`,
+    [countLegacyTokens(aiPhrase.usage), calcHaikuCost(aiPhrase.usage) + reachBackOutTemplateCostUsd, contact.id]
   )
 
   await writeToCrm(
@@ -369,6 +395,12 @@ async function processReachBackOutJob(job: any) {
      VALUES ($1,$2,'outbound',$3,$4,'reach_back_out')`,
     [contact.id, config.id, channel, message]
   )
+  publishInboxEvent({
+    type: 'message_created',
+    contactId: contact.id,
+    clientId: config.id,
+    timestamp: new Date().toISOString(),
+  })
 
   // Schedule 3 bumps + bump_close in case the lead doesn't respond
   await scheduleBumps(contact.id, config.id)

@@ -8,6 +8,10 @@ import { handleInboundMessage } from './workflows/inbound-reply-handler'
 import { startScheduler } from './queue/scheduler'
 import { logger } from './utils/logger'
 import crypto from 'crypto'
+import { buildInboxHtml } from './inbox/ui'
+import { createInboxUser, getInboxUserFromRequest, listInboxUsers, loginInboxUser, logoutInboxUser, requireInboxAuth, setInboxUserActive } from './inbox/auth'
+import { getConversationDetail, listConversations } from './inbox/queries'
+import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -28,6 +32,54 @@ app.use((req, _res, next) => {
 // ─── HEALTH CHECK ────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+app.get('/inbox', (_req, res) => {
+  res.type('html').send(buildInboxHtml())
+})
+
+app.post('/inbox/api/login', async (req, res) => {
+  try {
+    const user = await loginInboxUser(String(req.body?.email || ''), String(req.body?.password || ''), res)
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' })
+    res.json({ user })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/inbox/api/logout', async (req, res) => {
+  await logoutInboxUser(req, res)
+  res.json({ success: true })
+})
+
+app.get('/inbox/api/me', async (req, res) => {
+  const user = await getInboxUserFromRequest(req)
+  if (!user) return res.status(401).json({ error: 'Unauthorised' })
+  res.json({ user })
+})
+
+app.get('/inbox/api/conversations', requireInboxAuth, async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : ''
+  const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all'
+  res.json({ conversations: await listConversations(q, filter) })
+})
+
+app.get('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res) => {
+  const detail = await getConversationDetail(req.params.contactId)
+  if (!detail) return res.status(404).json({ error: 'Not found' })
+  res.json(detail)
+})
+
+app.get('/inbox/api/events', requireInboxAuth, (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  })
+  res.flushHeaders?.()
+  const unsubscribe = subscribeInboxEvents(res)
+  req.on('close', unsubscribe)
 })
 
 // ════════════════════════════════════════════════════════════
@@ -118,9 +170,19 @@ app.post('/webhook/whatsapp', async (req, res) => {
              last_delivery_status=$1,
              last_read_at=CASE WHEN $1='read' THEN NOW() ELSE last_read_at END,
              updated_at=NOW()
-           WHERE phone_number LIKE $2`,
+           WHERE phone_number LIKE $2
+           RETURNING id, client_id`,
           [deliveryStatus, `%${recipientPhone}%`]
-        ).catch(() => {})
+        ).then((result) => {
+          for (const row of result.rows) {
+            publishInboxEvent({
+              type: 'status_updated',
+              contactId: row.id,
+              clientId: row.client_id,
+              timestamp: new Date().toISOString(),
+            })
+          }
+        }).catch(() => {})
       }
       return
     }
@@ -317,6 +379,33 @@ app.get('/admin/clients', requireAdminSecret, async (_req, res) => {
   res.json(result.rows)
 })
 
+app.get('/admin/inbox-users', requireAdminSecret, async (_req, res) => {
+  res.json(await listInboxUsers())
+})
+
+app.post('/admin/inbox-users', requireAdminSecret, async (req, res) => {
+  try {
+    const user = await createInboxUser(
+      String(req.body?.email || ''),
+      String(req.body?.password || ''),
+      req.body?.display_name ? String(req.body.display_name) : null
+    )
+    res.json({ success: true, user })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/admin/inbox-users/:id/active', requireAdminSecret, async (req, res) => {
+  const userId = Number(req.params.id)
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: 'Invalid user id' })
+  const raw = req.body?.is_active
+  const isActive = raw === true || raw === 'true' || raw === 1 || raw === '1'
+  const user = await setInboxUserActive(userId, isActive)
+  if (!user) return res.status(404).json({ error: 'Not found' })
+  res.json({ success: true, user })
+})
+
 // Create or update a client
 app.post('/admin/clients', requireAdminSecret, async (req, res) => {
   const { db } = await import('./db/client')
@@ -344,6 +433,7 @@ app.post('/admin/clients', requireAdminSecret, async (req, res) => {
       if (c.wa_followup3_template_name !== undefined) { updates.push(`wa_followup3_template_name = $${paramIndex++}`); params.push(c.wa_followup3_template_name) }
       if (c.wa_bump_template_names !== undefined) { updates.push(`wa_bump_template_names = $${paramIndex++}`); params.push(JSON.stringify(c.wa_bump_template_names)) }
       if (c.wa_reach_back_out_template_name !== undefined) { updates.push(`wa_reach_back_out_template_name = $${paramIndex++}`); params.push(c.wa_reach_back_out_template_name) }
+      if (c.wa_marketing_template_cost_usd !== undefined) { updates.push(`wa_marketing_template_cost_usd = $${paramIndex++}`); params.push(c.wa_marketing_template_cost_usd) }
       if (c.agent_name !== undefined) { updates.push(`agent_name = $${paramIndex++}`); params.push(c.agent_name) }
       if (c.agent_question_template !== undefined) { updates.push(`agent_question_template = $${paramIndex++}`); params.push(c.agent_question_template) }
       if (c.test_phone_numbers !== undefined) { updates.push(`test_phone_numbers = $${paramIndex++}`); params.push(c.test_phone_numbers) }

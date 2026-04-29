@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { logger } from '../utils/logger'
 import type { DetectedKeyword } from '../utils/types'
+import type { AIUsage } from '../config/pricing'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -67,7 +68,7 @@ export async function generateAIResponse(params: {
   leadData: Record<string, string>
   latestMessage: string
   clientName: string
-}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null; agentQuestion: string | null; tokensUsed: number }> {
+}): Promise<{ text: string; keyword: DetectedKeyword; scheduledAt: string | null; agentQuestion: string | null; usage: AIUsage }> {
   // Read the prompt file fresh every time
   // This means you can edit the file and it takes effect immediately
   const promptPath = path.resolve(process.cwd(), params.promptFilePath)
@@ -148,9 +149,14 @@ ${params.latestMessage}
       ) as any | undefined
       const agentQuestion: string | null = askAgentUse?.input?.question ?? null
 
-      const tokensUsed = response.usage.input_tokens + response.usage.output_tokens
-      logger.info('AI response generated', { length: text.length, keyword, scheduledAt, agentQuestion: !!agentQuestion, tokensUsed })
-      return { text, keyword, scheduledAt, agentQuestion, tokensUsed }
+      logger.info('AI response generated', {
+        length: text.length,
+        keyword,
+        scheduledAt,
+        agentQuestion: !!agentQuestion,
+        usage: response.usage,
+      })
+      return { text, keyword, scheduledAt, agentQuestion, usage: response.usage }
     } catch (err: any) {
       lastError = err
       logger.warn('AI generation attempt failed', { attempt, error: err.message })
@@ -164,7 +170,7 @@ ${params.latestMessage}
   throw lastError || new Error('AI generation failed after all retries')
 }
 
-export async function generateContactNote(chatHistory: string): Promise<string> {
+export async function generateContactNote(chatHistory: string): Promise<{ text: string; usage: AIUsage }> {
   const promptPath = path.resolve(process.cwd(), 'skills/prompts/ai-note-taker.txt')
   let promptTemplate: string
   try {
@@ -182,17 +188,19 @@ export async function generateContactNote(chatHistory: string): Promise<string> 
     messages: [{ role: 'user', content: prompt }],
   })
 
-  return response.content
+  const text = response.content
     .filter((b) => b.type === 'text')
     .map((b) => (b as any).text)
     .join('')
     .trim()
+
+  return { text, usage: response.usage }
 }
 
 export async function generateBumpMessage(params: {
   bumpNumber: number
   conversationHistory: string
-}): Promise<string> {
+}): Promise<{ text: string; usage: AIUsage }> {
   const promptPath = path.resolve(process.cwd(), 'skills/prompts/bumps.txt')
   let promptTemplate: string
   try {
@@ -218,11 +226,12 @@ export async function generateBumpMessage(params: {
           setTimeout(() => reject(new Error('AI generation timeout')), TIMEOUT_MS)
         ),
       ])
-      return response.content
+      const text = response.content
         .filter((b) => b.type === 'text')
         .map((b) => (b as any).text)
         .join('')
         .trim()
+      return { text, usage: response.usage }
     } catch (err: any) {
       logger.warn('generateBumpMessage attempt failed', { attempt, error: err.message })
       if (attempt < MAX_RETRIES) await sleep(1000 * Math.pow(2, attempt - 1))
@@ -234,7 +243,7 @@ export async function generateBumpMessage(params: {
 
 export async function generateReachBackOutMessage(params: {
   conversationHistory: string
-}): Promise<string> {
+}): Promise<{ text: string; usage: AIUsage }> {
   const promptPath = path.resolve(process.cwd(), 'skills/prompts/reach-back-out.txt')
   let promptTemplate: string
   try {
@@ -259,11 +268,12 @@ export async function generateReachBackOutMessage(params: {
           setTimeout(() => reject(new Error('AI generation timeout')), TIMEOUT_MS)
         ),
       ])
-      return response.content
+      const text = response.content
         .filter((b) => b.type === 'text')
         .map((b) => (b as any).text)
         .join('')
         .trim()
+      return { text, usage: response.usage }
     } catch (err: any) {
       logger.warn('generateReachBackOutMessage attempt failed', { attempt, error: err.message })
       if (attempt < MAX_RETRIES) await sleep(1000 * Math.pow(2, attempt - 1))

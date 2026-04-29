@@ -1,0 +1,4 @@
+# Skill: Skill Architect
+1. Detect: Notice a recurring manual workflow.
+2. Standardize: Draft a logic flow: [Trigger] -> [Context] -> [Action] -> [Verify].
+3. Commit: Create a new file in /skills/ for user review.

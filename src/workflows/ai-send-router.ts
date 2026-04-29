@@ -15,8 +15,11 @@ import { logger } from '../utils/logger'
 import { updateDashboard } from '../reports/dashboard'
 import { buildWeeklyReport, updateMetrics } from '../reports/weekly-report'
 import { generateContactNote } from '../ai/generate'
+import { calcHaikuCost, countLegacyTokens } from '../config/pricing'
 import type { DetectedKeyword, SendResult } from '../utils/types'
+import * as leadNotifications from '../notifications/lead-notifications'
 import { scheduleBumps, cancelBumps, cancelPendingBumps } from './bump-handler'
+import { publishInboxEvent } from '../inbox/live-events'
 
 // ─── ENTRY POINT ─────────────────────────────────────────────
 export async function handleAIResponseReady(contactId: string, routedKeyword?: DetectedKeyword, scheduledAt?: string | null, chatHistory?: string) {
@@ -111,6 +114,12 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
      VALUES ($1,$2,'outbound',$3,$4,'ai_reply')`,
     [contactId, config.id, channel, responseText]
   )
+  publishInboxEvent({
+    type: 'message_created',
+    contactId,
+    clientId: config.id,
+    timestamp: new Date().toISOString(),
+  })
 
   // ── Add "qualifying_questions" tag if starting qualification ──
   const startsQualifying = responseText.toLowerCase().includes('which area') ||
@@ -175,6 +184,9 @@ function detectKeyword(text: string): DetectedKeyword {
       lower.includes("i will reach back out"))       return 'reach_back_out'
   if (lower.includes('senior team member') ||
       lower.includes('more senior'))                 return 'senior_team_member'
+  if (lower.includes('buyer qualified') ||
+      lower.includes('qualified buyer') ||
+      lower.includes('fully qualified'))             return 'buyer_qualified'
   if (lower.includes('interested in purchasing') ||
       lower.includes('want to purchase') ||
       lower.includes('looking to buy') ||
@@ -207,6 +219,7 @@ async function handleKeyword(
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)
       writeContactNote(contact, config, chatHistory, 'Not Interested').catch(() => {})
+      leadNotifications.sendLeadNotification(contact, 'not_interested').catch(() => {})
       break
 
     case 'renting':
@@ -264,23 +277,44 @@ async function handleKeyword(
       break
 
     case 'interested_in_purchasing':
-      // Remove qualifying_questions, add interested_in_purchasing, manual_takeover, qualified (prevent duplicates)
+      // Remove qualifying_questions, add interested_in_purchasing + manual_takeover (prevent duplicates)
       await db.query(
         `UPDATE contacts SET tags=array_remove(tags,'qualifying_questions') WHERE id=$1`,
         [contactId]
       )
       await db.query(
-        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover', 'qualified'])) WHERE id=$1`,
+        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover'])) WHERE id=$1`,
         [contactId]
       )
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['interested-in-purchasing', 'manual-takeover', 'qualified'],
+        tags_add: ['interested-in-purchasing', 'manual-takeover'],
         note: `IAE: Lead is interested in purchasing.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Interested in Purchasing' } : undefined,
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)
       writeContactNote(contact, config, chatHistory, 'Interested in Purchasing').catch(() => {})
+      leadNotifications.sendLeadNotification(contact, 'interested_in_purchasing').catch(() => {})
+      break
+
+    case 'buyer_qualified':
+      await db.query(
+        `UPDATE contacts SET tags=array_remove(tags,'qualifying_questions') WHERE id=$1`,
+        [contactId]
+      )
+      await db.query(
+        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover', 'qualified', 'buyer_qualified'])) WHERE id=$1`,
+        [contactId]
+      )
+      await writeToCrm({
+        contact_id: contactId,
+        tags_add: ['interested-in-purchasing', 'manual-takeover', 'qualified', 'buyer-qualified'],
+        note: `IAE: Lead has been fully qualified and is interested in purchasing.\n\nAI message: ${responseText}`,
+        opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Buyer Qualified' } : undefined,
+      }, config, contact.crm_callback_url)
+      await cancelPendingBumps(contactId)
+      writeContactNote(contact, config, chatHistory, 'Buyer Qualified').catch(() => {})
+      leadNotifications.sendLeadNotification(contact, 'buyer_qualified').catch(() => {})
       break
 
     case 'already_purchased':
@@ -293,6 +327,7 @@ async function handleKeyword(
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)
       writeContactNote(contact, config, chatHistory, 'Already Purchased').catch(() => {})
+      leadNotifications.sendLeadNotification(contact, 'already_purchased').catch(() => {})
       break
 
     case 'none':
@@ -321,9 +356,15 @@ async function handleKeyword(
 async function writeContactNote(contact: any, config: any, chatHistory: string, outcome: string) {
   try {
     const note = await generateContactNote(chatHistory)
-    await db.query(`UPDATE contacts SET ai_note=$1 WHERE id=$2`, [note, contact.id])
+    await db.query(
+      `UPDATE contacts SET ai_note=$1,
+         total_tokens_used=total_tokens_used+$2,
+         total_cost_usd=total_cost_usd+$3
+       WHERE id=$4`,
+      [note.text, countLegacyTokens(note.usage), calcHaikuCost(note.usage), contact.id]
+    )
     await writeToCrm(
-      { contact_id: contact.id, note: `Cameron AI System — Conversation Summary:###${note}` },
+      { contact_id: contact.id, note: `Cameron AI System — Conversation Summary:###${note.text}` },
       config, contact.crm_callback_url
     )
     logger.info('Contact note written', { contactId: contact.id, outcome })

@@ -9,9 +9,11 @@
 import { db } from '../db/client'
 import { getClientConfig } from '../config/client-config'
 import { generateAIResponse } from '../ai/generate'
+import { calcSonnetCost, countLegacyTokens, getWhatsAppMarketingTemplateCostUsd } from '../config/pricing'
 import { writeToCrm } from '../crm/adapter'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
+import { publishInboxEvent } from '../inbox/live-events'
 import { updateDashboard } from '../reports/dashboard'
 import { updateMetrics } from '../reports/weekly-report'
 
@@ -138,6 +140,12 @@ async function processBufferedMessages(contactId: string, channel: string) {
        VALUES ($1,$2,'inbound',$3,$4)`,
       [contactId, config.id, channel, combinedMessage]
     )
+    publishInboxEvent({
+      type: 'message_created',
+      contactId,
+      clientId: config.id,
+      timestamp: new Date().toISOString(),
+    })
 
     // ── Step 10: Loop counter + reset logic ──────────────────
     const hoursSinceLastReply = contact.last_reply_at
@@ -249,7 +257,7 @@ async function triggerAIGeneration(
 
   try {
     const resolvedPromptPath = resolvePromptPath(contact.tags, config)
-    const { text: responseText, keyword, scheduledAt, agentQuestion, tokensUsed } = await generateAIResponse({
+    const { text: responseText, keyword, scheduledAt, agentQuestion, usage } = await generateAIResponse({
       promptFilePath:  resolvedPromptPath,
       chatHistory,
       leadData,
@@ -271,13 +279,25 @@ async function triggerAIGeneration(
         const { sendWhatsAppTemplate } = await import('../channels/whatsapp')
         const agentPhone = config.stage_agents?.default?.target
         if (agentPhone) {
-          await sendWhatsAppTemplate(
+          const templateResult = await sendWhatsAppTemplate(
             agentPhone,
             config.agent_question_template,
             [fullName, contact.phone_number, agentQuestion],
             config.wa_phone_number_id!,
             config.wa_access_token!
           )
+          if (templateResult.success) {
+            await db.query(
+              `UPDATE contacts SET total_cost_usd=total_cost_usd+$1 WHERE id=$2`,
+              [getWhatsAppMarketingTemplateCostUsd(config), contactId]
+            )
+            publishInboxEvent({
+              type: 'conversation_updated',
+              contactId,
+              clientId: config.id,
+              timestamp: new Date().toISOString(),
+            })
+          }
         }
       } else {
         const agentMsg = [
@@ -301,11 +321,14 @@ async function triggerAIGeneration(
 
     // Update AI memory + accumulate token usage
     const updatedMemory = chatHistory + `\nAI: ${responseText}`
+    const tokensUsed = countLegacyTokens(usage)
+    const totalCostUsd = calcSonnetCost(usage)
     await db.query(
       `UPDATE contacts SET ai_memory=$1, workflow_stage='active',
-         total_tokens_used=total_tokens_used+$3
+         total_tokens_used=total_tokens_used+$3,
+         total_cost_usd=total_cost_usd+$4
        WHERE id=$2`,
-      [updatedMemory, contactId, tokensUsed]
+      [updatedMemory, contactId, tokensUsed, totalCostUsd]
     )
 
     logger.info('AI response stored — triggering AI Response Send + Keyword Routing', { contactId, keyword })

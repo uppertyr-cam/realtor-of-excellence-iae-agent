@@ -17,6 +17,8 @@ import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
 import { updateDashboard } from '../reports/dashboard'
 import { updateMetrics } from '../reports/weekly-report'
+import { getWhatsAppMarketingTemplateCostUsd } from '../config/pricing'
+import { publishInboxEvent } from '../inbox/live-events'
 import type { Contact, InboundWebhook, SendResult } from '../utils/types'
 import axios from 'axios'
 
@@ -112,71 +114,76 @@ export async function processDripQueue() {
   )
 
   for (const row of clientsRes.rows) {
-    const config = await getClientConfig(row.client_id)
+    try {
+      const config = await getClientConfig(row.client_id)
 
-    // ── Test contact pre-pass (bypass all rate limits) ──────
-    if (config.test_phone_numbers?.length) {
-      const testJobRes = await db.query(
+      // ── Test contact pre-pass (bypass all rate limits) ──────
+      if (config.test_phone_numbers?.length) {
+        const testJobRes = await db.query(
+          `UPDATE outbound_queue SET status='processing'
+           WHERE id = (
+             SELECT oq.id FROM outbound_queue oq
+             JOIN contacts c ON c.id = oq.contact_id
+             WHERE oq.client_id=$1 AND oq.status='pending' AND oq.scheduled_at<=NOW()
+               AND oq.message_type='first_message'
+               AND c.phone_number = ANY($2)
+             ORDER BY oq.created_at ASC LIMIT 1
+             FOR UPDATE SKIP LOCKED
+           ) RETURNING *`,
+          [config.id, config.test_phone_numbers]
+        )
+        if (testJobRes.rowCount! > 0) {
+          await sendFirstMessage(testJobRes.rows[0], config)
+          continue
+        }
+      }
+
+      // ── Working hours check ─────────────────────────────────
+      if (!isWithinWorkingHours(config)) continue
+
+      // ── Daily limit + interval check (DB-persisted) ─────────
+      const today = new Date().toISOString().split('T')[0]
+      const rateRes = await db.query(
+        `SELECT daily_send_count, daily_send_date, last_sent_at FROM clients WHERE id=$1`,
+        [config.id]
+      )
+      const rate = rateRes.rows[0]
+      const todayCount = rate.daily_send_date && new Date(rate.daily_send_date).toISOString().split('T')[0] === today
+        ? rate.daily_send_count : 0
+      if (todayCount >= config.daily_send_limit) continue
+      const intervalMs = config.send_interval_minutes * 60_000
+      const lastMs = rate.last_sent_at ? new Date(rate.last_sent_at).getTime() : 0
+      if (Date.now() - lastMs < intervalMs) continue
+
+      // ── Get next contact in queue ───────────────────────────
+      const queueRes = await db.query(
         `UPDATE outbound_queue SET status='processing'
          WHERE id = (
-           SELECT oq.id FROM outbound_queue oq
-           JOIN contacts c ON c.id = oq.contact_id
-           WHERE oq.client_id=$1 AND oq.status='pending' AND oq.scheduled_at<=NOW()
-             AND oq.message_type='first_message'
-             AND c.phone_number = ANY($2)
-           ORDER BY oq.created_at ASC LIMIT 1
+           SELECT id FROM outbound_queue
+           WHERE client_id=$1 AND status='pending' AND scheduled_at<=NOW() AND message_type='first_message'
+           ORDER BY created_at ASC LIMIT 1
            FOR UPDATE SKIP LOCKED
          ) RETURNING *`,
-        [config.id, config.test_phone_numbers]
+        [config.id]
       )
-      if (testJobRes.rowCount! > 0) {
-        await sendFirstMessage(testJobRes.rows[0], config)
-        continue
-      }
+      if (queueRes.rowCount === 0) continue
+
+      const job = queueRes.rows[0]
+      await sendFirstMessage(job, config)
+
+      // Persist rate limit counters to DB
+      await db.query(
+        `UPDATE clients SET
+           daily_send_count = CASE WHEN daily_send_date = CURRENT_DATE THEN daily_send_count + 1 ELSE 1 END,
+           daily_send_date = CURRENT_DATE,
+           last_sent_at = NOW()
+         WHERE id=$1`,
+        [config.id]
+      )
+    } catch (err: any) {
+      logger.error('processDripQueue client error', { client_id: row.client_id, error: err.message })
+      alertEmail('processDripQueue client error', { client_id: row.client_id, error: err.message })
     }
-
-    // ── Working hours check ─────────────────────────────────
-    if (!isWithinWorkingHours(config)) continue
-
-    // ── Daily limit + interval check (DB-persisted) ─────────
-    const today = new Date().toISOString().split('T')[0]
-    const rateRes = await db.query(
-      `SELECT daily_send_count, daily_send_date, last_sent_at FROM clients WHERE id=$1`,
-      [config.id]
-    )
-    const rate = rateRes.rows[0]
-    const todayCount = rate.daily_send_date && new Date(rate.daily_send_date).toISOString().split('T')[0] === today
-      ? rate.daily_send_count : 0
-    if (todayCount >= config.daily_send_limit) continue
-    const intervalMs = config.send_interval_minutes * 60_000
-    const lastMs = rate.last_sent_at ? new Date(rate.last_sent_at).getTime() : 0
-    if (Date.now() - lastMs < intervalMs) continue
-
-    // ── Get next contact in queue ───────────────────────────
-    const queueRes = await db.query(
-      `UPDATE outbound_queue SET status='processing'
-       WHERE id = (
-         SELECT id FROM outbound_queue
-         WHERE client_id=$1 AND status='pending' AND scheduled_at<=NOW() AND message_type='first_message'
-         ORDER BY created_at ASC LIMIT 1
-         FOR UPDATE SKIP LOCKED
-       ) RETURNING *`,
-      [config.id]
-    )
-    if (queueRes.rowCount === 0) continue
-
-    const job = queueRes.rows[0]
-    await sendFirstMessage(job, config)
-
-    // Persist rate limit counters to DB
-    await db.query(
-      `UPDATE clients SET
-         daily_send_count = CASE WHEN daily_send_date = CURRENT_DATE THEN daily_send_count + 1 ELSE 1 END,
-         daily_send_date = CURRENT_DATE,
-         last_sent_at = NOW()
-       WHERE id=$1`,
-      [config.id]
-    )
   }
 }
 
@@ -350,6 +357,10 @@ async function sendFirstMessage(job: any, config: any) {
 
   // ── Post-send updates ─────────────────────────────────────
   const now = new Date()
+  const firstMessageTemplateCostUsd =
+    deliveryChannel === 'whatsapp' && !!config.wa_first_message_template_name
+      ? getWhatsAppMarketingTemplateCostUsd(config)
+      : 0
   await db.query(
     `UPDATE contacts SET
        workflow_stage='active',
@@ -359,9 +370,10 @@ async function sendFirstMessage(job: any, config: any) {
        first_message_sent=$1,
        first_message_at=$2,
        ai_memory=$4,
+       total_cost_usd=total_cost_usd+$5,
        updated_at=NOW()
      WHERE id=$3`,
-    [message, now, contact.id, `AI: ${message}`]
+    [message, now, contact.id, `AI: ${message}`, firstMessageTemplateCostUsd]
   )
 
   await db.query(
@@ -375,6 +387,12 @@ async function sendFirstMessage(job: any, config: any) {
      VALUES ($1,$2,'outbound',$3,$4,'first_message')`,
     [contact.id, config.id, deliveryChannel, message]
   )
+  publishInboxEvent({
+    type: 'message_created',
+    contactId: contact.id,
+    clientId: config.id,
+    timestamp: new Date().toISOString(),
+  })
 
   // ── CRM Callback ──────────────────────────────────────────
   await writeToCrm(
