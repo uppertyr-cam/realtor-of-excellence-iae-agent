@@ -159,6 +159,8 @@ async function processBumpJob(job: any) {
     [contact.id, config.id, channel, message]
   )
 
+  updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
   logger.info('Bump sent', { contact_id: contact.id, channel, bump_number: bumpNumber })
 }
 

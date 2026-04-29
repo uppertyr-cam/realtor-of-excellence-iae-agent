@@ -12,6 +12,8 @@ import { generateAIResponse } from '../ai/generate'
 import { writeToCrm } from '../crm/adapter'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
+import { updateDashboard } from '../reports/dashboard'
+import { updateMetrics } from '../reports/weekly-report'
 
 const DEBOUNCE_MS = 5_000
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -167,6 +169,8 @@ async function processBufferedMessages(contactId: string, channel: string) {
 
     // ── Step 12: Route based on stage ────────────────────────
     await routeContact(contact, config, combinedMessage, leadData, loopCounter, newMemory)
+    updateDashboard(contact.client_id).catch(() => {})
+    updateMetrics(contact.client_id).catch(() => {})
 
   } finally {
     await db.releaseLock(contactId)

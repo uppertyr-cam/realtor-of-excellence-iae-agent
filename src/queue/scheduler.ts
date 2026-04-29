@@ -266,6 +266,8 @@ async function processFollowUpJob(job: any) {
     [contact.id, config.id, channel, message, job.message_type]
   )
 
+  updateDashboard(contact.client_id).catch(() => {})
+  updateMetrics(contact.client_id).catch(() => {})
   logger.info(`${job.message_type} sent`, { contact_id: contact.id, channel })
 }
 
