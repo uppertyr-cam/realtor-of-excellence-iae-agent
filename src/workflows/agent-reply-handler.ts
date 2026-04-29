@@ -70,9 +70,13 @@ export async function handleAgentReply({
 
     const contact = res.rows[0]
 
+    // Fetch config first so we can write to the correct per-client prompt file
+    const clientRes = await db.query(`SELECT * FROM clients WHERE id = $1`, [clientId])
+    const config = clientRes.rows[0]
+
     // Insert as a knowledge fact into the FAQ section — before the test deployment marker if present.
     // Plain fact format so the AI applies it to any phrasing, not just the exact question asked.
-    const promptPath = path.join(process.cwd(), 'prompts', 'conversation.txt')
+    const promptPath = path.resolve(process.cwd(), config.prompt_file_path)
     const current = await fs.readFile(promptPath, 'utf-8')
     const faqEntry = `\n${contact.pending_answer} (Applies when leads ask about: ${contact.pending_question})`
     const markerIndex = current.indexOf('\n# Test deployment marker')
@@ -95,8 +99,6 @@ export async function handleAgentReply({
     )
 
     // Confirm to agent
-    const clientRes = await db.query(`SELECT * FROM clients WHERE id = $1`, [clientId])
-    const config = clientRes.rows[0]
     await sendToAgent(senderPhone, `✅ FAQ updated. I'll answer that question automatically next time.`, config)
 
     logger.info('FAQ updated from agent APPROVE', { contactId: contact.id, question: contact.pending_question })

@@ -116,7 +116,7 @@ Called inline by Inbound Reply Handler — `handleAIResponseReady(contactId, key
 
 | Problem | Fix |
 |---|---|
-| Message sent but wrong keyword detected | Check if Claude used the `route_lead` tool (primary path) or if `detectKeyword()` fallback fired. Check `ai_responses.response_text` for the exact text. If the phrase doesn't match the table above, it won't be detected. Update `detectKeyword()` in source if needed — also update `prompts/conversation.txt` to keep them in sync. |
+| Message sent but wrong keyword detected | Check if Claude used the `route_lead` tool (primary path) or if `detectKeyword()` fallback fired. Check `ai_responses.response_text` for the exact text. If the phrase doesn't match the table above, it won't be detected. Update `detectKeyword()` in source if needed — also update `skills/prompts/conversation.txt` to keep them in sync. |
 | `send_failed` tag on contact after AI generation | The AI response was generated but delivery failed. Check `ai_responses` table for `status='failed'`. Check Meta/Twilio credentials. The response text is stored — manually retry or trigger a re-send. |
 | `goodbye_killswitch` fired unexpectedly | The AI response contained the word "goodbye". Review the prompt to ensure Claude is not closing conversations prematurely. Check `ai_responses.response_text` for the row. |
 | `reach_back_out` row not appearing in `outbound_queue` | Claude did not provide `scheduledAt` in the `route_lead` tool call. Check `ai_responses.response_text` — the keyword was detected but no date was extracted. Claude's prompt must instruct it to always include a date for this keyword. |
@@ -127,5 +127,5 @@ Called inline by Inbound Reply Handler — `handleAIResponseReady(contactId, key
 ## Notes
 - This workflow is called inline by Inbound Reply Handler — it is not an HTTP endpoint and does not have its own webhook.
 - The bump clock resets on **every AI reply**, not just on keyword detection. If a lead keeps replying, bumps never fire.
-- `detectKeyword()` and `prompts/conversation.txt` must stay in sync — if you add a new keyword phrase to the prompt, add the matching phrase to `detectKeyword()` in `ai-send-router.ts`.
+- `detectKeyword()` and `skills/prompts/conversation.txt` must stay in sync — if you add a new keyword phrase to the prompt, add the matching phrase to `detectKeyword()` in `ai-send-router.ts`.
 - The goodbye killswitch is a hard stop — no message is sent when it fires. This is intentional.

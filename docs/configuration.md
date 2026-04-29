@@ -25,7 +25,7 @@ Each client has their own:
 - Message templates (`first_message`, `bump1`, `bump2`, `reach_back_out_message_template`)
 - CRM credentials (`crm_type`, `crm_api_key`, `crm_base_url`)
 - Pipeline config (`pipeline_id`, `pipeline_stage_id`)
-- Prompt file path (default: `prompts/conversation.txt`)
+- Prompt file path (default: `skills/prompts/conversation.txt`)
 - Loop counter max (default: 20)
 
 ## Adding a New Client
@@ -46,7 +46,7 @@ POST to `/admin/clients` with `x-iae-secret` header:
 
 ## AI Prompt File
 
-Lives at `prompts/conversation.txt` (or custom path per client).
+Lives at `skills/prompts/conversation.txt` (or custom path per client).
 
 Read fresh from disk on every AI call — edit it and changes are live immediately, no restart needed.
 

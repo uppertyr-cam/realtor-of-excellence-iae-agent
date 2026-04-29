@@ -6,7 +6,7 @@ Edit `src/crm/adapter.ts` — add a new write function for their API.
 
 ## Add a new keyword
 Edit `src/workflows/ai-send-router.ts` — add detection in `detectKeyword()` and a new case in `handleKeyword()`.
-Also update `prompts/conversation.txt` to instruct Claude to use the new keyword phrase.
+Also update `skills/prompts/conversation.txt` to instruct Claude to use the new keyword phrase.
 
 ## Change debounce window
 Edit `src/workflows/inbound-reply-handler.ts` — change `DEBOUNCE_MS` at the top of the file.
@@ -15,7 +15,7 @@ Edit `src/workflows/inbound-reply-handler.ts` — change `DEBOUNCE_MS` at the to
 Update the client's record in the `clients` table: `daily_send_limit` and `send_interval_minutes`.
 
 ## Edit the AI conversation prompt
-Edit `prompts/conversation.txt` directly. Changes are live immediately — no restart needed.
+Edit `skills/prompts/conversation.txt` directly. Changes are live immediately — no restart needed.
 
 ## Add a new notification channel for manual takeover
 Edit the `notifyAgent()` function in `src/workflows/inbound-reply-handler.ts`.

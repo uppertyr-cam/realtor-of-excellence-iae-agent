@@ -141,6 +141,6 @@ Twilio signature verification is not yet implemented — all SMS webhooks are ac
 
 ## Notes
 - The `processing_locked` flag prevents race conditions when leads reply in rapid succession. The scheduler auto-releases locks older than 2 minutes.
-- The prompt file is read fresh from disk on every AI call — you can edit `prompts/conversation.txt` on the VPS without restarting the server.
+- The prompt file is read fresh from disk on every AI call — you can edit `skills/prompts/conversation.txt` on the VPS without restarting the server.
 - The debounce timer is in-memory — it does not survive a server restart. If the server restarts mid-debounce, the buffered message will remain in `message_buffer` unprocessed until the next inbound message triggers a new timer for that contact.
 - Claude's `route_lead` tool is the primary source for keyword routing — `detectKeyword()` text scan in AI Response Send + Keyword Routing is the fallback only.

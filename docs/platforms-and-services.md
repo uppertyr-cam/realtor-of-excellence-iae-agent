@@ -29,10 +29,10 @@ OpenAI's audio transcription model. When a lead sends a voice note on WhatsApp, 
 ## AI
 
 ### Anthropic Claude API
-The AI backbone of the system. Claude reads the conversation history, current contact state, and a dynamic prompt to generate contextual replies to send to the lead. Every inbound message triggers a Claude API call. The prompt (`prompts/conversation.txt`) is injected fresh for each call to support live prompt edits without server restart.
+The AI backbone of the system. Claude reads the conversation history, current contact state, and a dynamic prompt to generate contextual replies to send to the lead. Every inbound message triggers a Claude API call. The prompt (`skills/prompts/conversation.txt`) is injected fresh for each call to support live prompt edits without server restart.
 
 - **Implementation:** `src/ai/generate.ts`
-- **Configuration:** Prompt file at `prompts/conversation.txt`
+- **Configuration:** Prompt file at `skills/prompts/conversation.txt`
 - **Credentials:** `ANTHROPIC_API_KEY` in `.env`
 - **Behavior:** 30s timeout, up to 3 retries, supports tool calls (e.g. `route_lead()`)
 

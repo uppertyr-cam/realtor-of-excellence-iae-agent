@@ -48,7 +48,7 @@ One row per client. Stores all configuration, credentials, and templates.
 | `pipeline_stage_id` | TEXT | — | NULL |
 | `notification_channel` | TEXT | — | `'email'` |
 | `notification_target` | TEXT | — | NULL |
-| `prompt_file_path` | TEXT | NOT NULL | `'prompts/conversation.txt'` |
+| `prompt_file_path` | TEXT | NOT NULL | `'skills/prompts/conversation.txt'` |
 | `dashboard_sheet_id` | TEXT | — | NULL |
 | `loop_counter_max` | INT | NOT NULL | `50` |
 | `loop_counter_reset_hours` | INT | — | NULL |

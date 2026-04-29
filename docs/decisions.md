@@ -56,7 +56,7 @@ All decisions verified from source code. Generated 2026-04-12.
 
 **What:** `generateAIResponse()` calls `fs.readFileSync(promptFilePath)` synchronously on every invocation. The file is never cached between calls.
 
-**Why:** Enables live prompt edits without a server restart. Changing `prompts/conversation.txt` takes effect on the next AI call immediately. This is an intentional product feature that allows prompt iteration in production.
+**Why:** Enables live prompt edits without a server restart. Changing `skills/prompts/conversation.txt` takes effect on the next AI call immediately. This is an intentional product feature that allows prompt iteration in production.
 
 **Trade-off:** Synchronous file I/O on every AI call (which is already a hot path). The CLAUDE.md rule says "Never add synchronous file reads in hot paths — only `src/ai/generate.ts` reads files" — this single location is the deliberate exception. A misconfigured or missing prompt file throws and fails the AI generation.
 

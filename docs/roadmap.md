@@ -127,16 +127,16 @@ Current `wa_access_token` on `realtor_of_excellence` client is a 24-hour test to
 `src/workflows/outbound-first-message.ts`: `dailyCounts` and `lastSentAt` Maps are in-memory and reset on server restart. Move to the `clients` table (add `daily_count`, `daily_count_date`, `last_sent_at` columns) or a dedicated DB table so limits survive restarts.
 
 ### Agent Q&A Relay *(Large)*
-Full design in `to-do-list/tomorrow.md`. When Claude can't answer a lead's question, relay it to the human agent for a response that can optionally be appended to the FAQ in `prompts/conversation.txt`.
+Full design in `to-do-list/tomorrow.md`. When Claude can't answer a lead's question, relay it to the human agent for a response that can optionally be appended to the FAQ in `skills/prompts/conversation.txt`.
 
 New components required:
 1. New Claude tool: `ask_agent` in `src/ai/generate.ts`
 2. New tag: `awaiting_agent_answer`
 3. New schema: column or table to store pending questions
 4. Inbound handler modification in `src/workflows/inbound-reply-handler.ts`: detect agent reply, forward to lead, remove tag
-5. "APPROVE" command → append Q&A pair to `prompts/conversation.txt`
+5. "APPROVE" command → append Q&A pair to `skills/prompts/conversation.txt`
 
-Files to modify: `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/inbound-reply-handler.ts`, `src/workflows/ai-send-router.ts`, `prompts/conversation.txt`, `src/utils/types.ts`
+Files to modify: `src/db/schema.sql`, `src/ai/generate.ts`, `src/workflows/inbound-reply-handler.ts`, `src/workflows/ai-send-router.ts`, `skills/prompts/conversation.txt`, `src/utils/types.ts`
 
 ### Full Flow Test *(Small — verification only)*
 The to-do list flags that something went wrong in the previous session. Confirm the end-to-end flow works before trusting the system in production. See `to-do-list/tomorrow.md` for checklist.
