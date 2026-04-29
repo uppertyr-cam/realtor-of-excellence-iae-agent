@@ -11,6 +11,15 @@ import { generateReachBackOutMessage } from '../ai/generate'
 import { logger } from '../utils/logger'
 import { alertEmail } from '../utils/alert'
 
+async function runSchedulerStep(name: string, fn: () => Promise<void>) {
+  try {
+    await fn()
+  } catch (err: any) {
+    logger.error('Scheduler step error', { step: name, error: err.message })
+    throw err
+  }
+}
+
 // ─── START SCHEDULER ─────────────────────────────────────────
 export function startScheduler() {
   logger.info('Scheduler started')
@@ -18,12 +27,12 @@ export function startScheduler() {
   // Process all queues every 60 seconds
   setInterval(async () => {
     try {
-      await processDripQueue()
-      await processFollowUpQueue()
-      await processBumpQueue()
-      await processBumpCloseQueue()
-      await processReachBackOutQueue()
-      await db.releaseStaleLocks() // Safety net for stuck locks
+      await runSchedulerStep('processDripQueue', processDripQueue)
+      await runSchedulerStep('processFollowUpQueue', processFollowUpQueue)
+      await runSchedulerStep('processBumpQueue', processBumpQueue)
+      await runSchedulerStep('processBumpCloseQueue', processBumpCloseQueue)
+      await runSchedulerStep('processReachBackOutQueue', processReachBackOutQueue)
+      await runSchedulerStep('releaseStaleLocks', db.releaseStaleLocks) // Safety net for stuck locks
     } catch (err: any) {
       logger.error('Scheduler tick error', { error: err.message })
       alertEmail('Scheduler tick error', { error: err.message })
@@ -32,11 +41,11 @@ export function startScheduler() {
 
   // Run immediately on startup
   setTimeout(async () => {
-    await processDripQueue()
-    await processFollowUpQueue()
-    await processBumpQueue()
-    await processBumpCloseQueue()
-    await processReachBackOutQueue()
+    await runSchedulerStep('processDripQueue', processDripQueue)
+    await runSchedulerStep('processFollowUpQueue', processFollowUpQueue)
+    await runSchedulerStep('processBumpQueue', processBumpQueue)
+    await runSchedulerStep('processBumpCloseQueue', processBumpCloseQueue)
+    await runSchedulerStep('processReachBackOutQueue', processReachBackOutQueue)
   }, 2000)
 
   // Weekly report — every Monday at 9am Africa/Johannesburg
