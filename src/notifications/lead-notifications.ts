@@ -17,8 +17,10 @@ type NotificationContact = {
 
 const NOTIFICATION_FROM_EMAIL = process.env.NOTIFICATION_FROM_EMAIL || process.env.FROM_EMAIL || ''
 const NOTIFICATION_APP_PASSWORD = process.env.NOTIFICATION_APP_PASSWORD || process.env.GMAIL_APP_PASSWORD || ''
-const CC_EMAIL = 'cameron@uppertyr.com'
+const CC_EMAIL = process.env.NOTIFICATION_CC_EMAIL || ''
 const TEST_TO_EMAIL = process.env.NOTIFICATION_TEST_TO || ''
+const TO_QUALIFIED = process.env.NOTIFICATION_TO_QUALIFIED || ''
+const TO_CLOSED = process.env.NOTIFICATION_TO_CLOSED || ''
 
 const FOOTER_HTML = `
   <div style="background:#0B1220;padding:28px 36px 34px 36px;border-top:1px solid rgba(92,225,230,0.18);">
@@ -122,7 +124,7 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
   switch (outcome) {
     case 'buyer_qualified':
       return {
-        to: 'sean@realgroup.co.za,charmaine@realgroup.co.za,reception@realgroup.co.za',
+        to: TO_QUALIFIED,
         subject: `[Buyer Qualified] ${name}`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — BUYER QUALIFIED',
@@ -135,7 +137,7 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
       }
     case 'interested_in_purchasing':
       return {
-        to: 'sean@realgroup.co.za,reception@realgroup.co.za,charmaine@realgroup.co.za',
+        to: TO_QUALIFIED,
         subject: `[Buyer Interested] ${name} — Qualification Pending`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — BUYER INTERESTED',
@@ -148,7 +150,7 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
       }
     case 'not_interested':
       return {
-        to: 'charmaine@realgroup.co.za,dorinda@realgroup.co.za,sean@realgroup.co.za',
+        to: TO_CLOSED,
         subject: `[Not Interested] ${name}`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — NOT INTERESTED',
@@ -161,7 +163,7 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
       }
     case 'already_purchased':
       return {
-        to: 'charmaine@realgroup.co.za,dorinda@realgroup.co.za,sean@realgroup.co.za',
+        to: TO_CLOSED,
         subject: `[Already Purchased] ${name}`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — ALREADY PURCHASED',

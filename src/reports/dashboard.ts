@@ -74,7 +74,7 @@ export async function updateDashboard(clientId: string): Promise<void> {
       spreadsheetId = created.data.spreadsheetId!
       await drive.permissions.create({
         fileId: spreadsheetId,
-        requestBody: { role: 'writer', type: 'user', emailAddress: 'cameron@hyperzenai.com' }
+        requestBody: { role: 'writer', type: 'user', emailAddress: process.env.GOOGLE_SHEETS_SHARE_EMAIL || '' }
       })
       await db.query('UPDATE clients SET dashboard_sheet_id=$1 WHERE id=$2', [spreadsheetId, clientId])
       logger.info('Dashboard sheet created', { clientId, spreadsheetId })
