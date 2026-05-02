@@ -25,6 +25,14 @@ Entry point: `src/index.ts`
 
 ---
 
+## Session Handoff
+
+- On session start: read `docs/last-session.md`, then immediately delete its contents (wipe it clean)
+- During the session: maintain a running summary of what's being worked on, completed, and pending
+- On session end (or when asked): write the current session's summary to `docs/last-session.md` so the next session can pick up instantly
+
+---
+
 ## Collaboration Rules
 
 - If asked to do something repetitive or that required explicit instruction, update CLAUDE.md (or the relevant doc) immediately so it applies automatically in future sessions
