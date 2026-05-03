@@ -120,6 +120,12 @@ export function buildInboxHtml(): string {
       margin: 0;
       font-size: 26px;
     }
+    .topbar-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
     .topbar-meta {
       font-family: Arial, sans-serif;
       font-size: 13px;
@@ -175,6 +181,11 @@ export function buildInboxHtml(): string {
       border: 1px solid var(--line);
       margin-top: 0;
     }
+    .ghost.active {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
     .list {
       overflow: auto;
       padding: 8px;
@@ -226,6 +237,53 @@ export function buildInboxHtml(): string {
     .conversation.needs-attention .pill {
       background: #fde7c9;
       color: #8a4b00;
+    }
+    .email-row {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid transparent;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    .email-row:hover, .email-row.active {
+      background: rgba(15,118,110,0.08);
+      border-color: rgba(15,118,110,0.18);
+    }
+    .email-subject {
+      font-size: 16px;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+    .email-meta {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .email-detail {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      gap: 16px;
+    }
+    .email-card {
+      background: rgba(255,255,255,0.84);
+      border: 1px solid rgba(216,209,196,0.9);
+      border-radius: 22px;
+      padding: 20px 22px;
+      box-shadow: 0 10px 28px rgba(23,33,31,0.06);
+    }
+    .email-card h3 {
+      margin: 0 0 10px;
+      font-size: 28px;
+    }
+    .email-body-frame {
+      width: 100%;
+      min-height: 720px;
+      border: 1px solid rgba(216,209,196,0.9);
+      border-radius: 18px;
+      background: #fff;
     }
     .thread-panel {
       display: flex;
@@ -530,6 +588,10 @@ export function buildInboxHtml(): string {
       <div>
         <div class="eyebrow">Live View</div>
         <h2>Conversation Inbox</h2>
+        <div class="topbar-nav">
+          <button id="view-conversations-btn" class="ghost" style="width:auto;padding:10px 14px;">Conversations</button>
+          <button id="view-emails-btn" class="ghost" style="width:auto;padding:10px 14px;">Email inbox</button>
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;">
         <div id="me" class="topbar-meta"></div>
@@ -565,8 +627,11 @@ export function buildInboxHtml(): string {
   <script>
     const state = {
       user: null,
+      view: 'conversations',
       conversations: [],
       counts: { all_count: 0, unread_count: 0, read_count: 0, not_sent_count: 0 },
+      emails: [],
+      activeEmailId: null,
       activeContactId: null,
       activeDetail: null,
       eventSource: null,
@@ -623,6 +688,7 @@ export function buildInboxHtml(): string {
     }
 
     function renderConversationList() {
+      if (state.view !== 'conversations') return
       const root = document.getElementById('conversation-list')
       Array.from(document.querySelectorAll('.filter-chip')).forEach(function (node) {
         node.classList.toggle('active', node.getAttribute('data-filter') === state.filter)
@@ -673,7 +739,37 @@ export function buildInboxHtml(): string {
       })
     }
 
+    function renderEmailList() {
+      if (state.view !== 'emails') return
+      const root = document.getElementById('conversation-list')
+      Array.from(document.querySelectorAll('.filter-chip')).forEach(function (node) {
+        node.classList.remove('active')
+      })
+      if (!state.emails.length) {
+        root.innerHTML = '<div class="thread-empty" style="padding:18px;">No project emails found.</div>'
+        return
+      }
+      root.innerHTML = state.emails.map(function (item) {
+        const classes = ['email-row']
+        if (String(item.id) === String(state.activeEmailId)) classes.push('active')
+        return '<div class="' + classes.join(' ') + '" data-email-id="' + escapeHtml(item.id) + '">' +
+          '<div class="email-subject">' + escapeHtml(item.subject) + '</div>' +
+          '<div class="email-meta">' + escapeHtml(item.category || 'email') + ' • ' + escapeHtml(item.send_status || 'sent') + '</div>' +
+          '<div class="email-meta">To: ' + escapeHtml(item.recipient_to || '—') + '</div>' +
+          '<div class="email-meta">' + escapeHtml(formatDate(item.created_at)) + '</div>' +
+        '</div>'
+      }).join('')
+
+      Array.from(root.querySelectorAll('.email-row')).forEach(function (node) {
+        node.addEventListener('click', function () {
+          const emailId = node.getAttribute('data-email-id')
+          if (emailId) openEmail(emailId)
+        })
+      })
+    }
+
     function renderThread(detail) {
+      if (state.view !== 'conversations') return
       state.activeDetail = detail
       const header = document.getElementById('thread-header')
       const body = document.getElementById('thread-body')
@@ -773,6 +869,38 @@ export function buildInboxHtml(): string {
       bindThreadActions(detail)
     }
 
+    function renderEmailDetail(detail) {
+      const header = document.getElementById('thread-header')
+      const body = document.getElementById('thread-body')
+      header.innerHTML =
+        '<h3>' + escapeHtml(detail.subject || 'Project email') + '</h3>' +
+        '<div class="thread-meta">' + escapeHtml(detail.category || 'email') + ' • ' + escapeHtml(formatDate(detail.created_at)) + '</div>'
+
+      body.innerHTML =
+        '<div class="email-detail">' +
+          '<div class="email-card">' +
+            '<div class="workflow-row"><span class="workflow-label">To</span><div class="workflow-value">' + escapeHtml(detail.recipient_to || '—') + '</div></div>' +
+            '<div class="workflow-row"><span class="workflow-label">Cc</span><div class="workflow-value">' + escapeHtml(detail.recipient_cc || '—') + '</div></div>' +
+            '<div class="workflow-row"><span class="workflow-label">Category</span><div class="workflow-value">' + escapeHtml(detail.category || 'email') + '</div></div>' +
+            '<div class="workflow-row"><span class="workflow-label">Status</span><div class="workflow-value">' + escapeHtml(detail.send_status || 'sent') + '</div></div>' +
+            '<div class="workflow-row"><span class="workflow-label">Lead</span><div class="workflow-value">' + escapeHtml(detail.contact_name || 'Project-level email') + '</div></div>' +
+            '<div class="workflow-row"><span class="workflow-label">Client</span><div class="workflow-value">' + escapeHtml(detail.client_name || '—') + '</div></div>' +
+            (detail.error ? '<div class="workflow-alert">Email error: ' + escapeHtml(detail.error) + '</div>' : '') +
+          '</div>' +
+          '<iframe id="email-body-frame" class="email-body-frame" sandbox=""></iframe>' +
+        '</div>'
+
+      const frame = document.getElementById('email-body-frame')
+      if (frame) frame.srcdoc = detail.html_body || '<div style="font-family:Arial,sans-serif;padding:20px;">No stored email body.</div>'
+    }
+
+    function updateViewButtons() {
+      const convoBtn = document.getElementById('view-conversations-btn')
+      const emailBtn = document.getElementById('view-emails-btn')
+      if (convoBtn) convoBtn.classList.toggle('active', state.view === 'conversations')
+      if (emailBtn) emailBtn.classList.toggle('active', state.view === 'emails')
+    }
+
     function setActionFeedback(message, isError) {
       const node = document.getElementById('action-feedback')
       if (!node) return
@@ -784,6 +912,38 @@ export function buildInboxHtml(): string {
       await loadConversations()
       if (state.activeContactId) {
         await openConversation(state.activeContactId)
+      }
+    }
+
+    async function loadEmails() {
+      const params = new URLSearchParams()
+      if (state.search) params.set('q', state.search)
+      const q = params.toString() ? ('?' + params.toString()) : ''
+      const data = await api('/inbox/api/emails' + q)
+      state.emails = data.emails || []
+      renderEmailList()
+      if (!state.activeEmailId && state.emails.length) {
+        openEmail(state.emails[0].id)
+      }
+    }
+
+    function openEmail(emailId) {
+      state.activeEmailId = String(emailId)
+      renderEmailList()
+      const email = state.emails.find(function (item) { return String(item.id) === String(emailId) })
+      if (email) renderEmailDetail(email)
+    }
+
+    async function switchView(view) {
+      state.view = view
+      updateViewButtons()
+      if (view === 'emails') {
+        state.activeContactId = null
+        await loadEmails()
+      } else {
+        state.activeEmailId = null
+        await loadConversations()
+        if (state.activeContactId) await openConversation(state.activeContactId)
       }
     }
 
@@ -995,6 +1155,7 @@ export function buildInboxHtml(): string {
         const data = await api('/inbox/api/me')
         state.user = data.user
         showApp()
+        updateViewButtons()
         await loadConversations()
         connectEvents()
       } catch (err) {
@@ -1027,7 +1188,9 @@ export function buildInboxHtml(): string {
       if (state.eventSource) state.eventSource.close()
       state.eventSource = null
       state.user = null
+      state.view = 'conversations'
       state.activeContactId = null
+      state.activeEmailId = null
       showAuth()
     })
 
@@ -1035,10 +1198,19 @@ export function buildInboxHtml(): string {
     document.getElementById('search-input').addEventListener('input', function (event) {
       state.search = event.target.value.trim()
       clearTimeout(searchTimer)
-      searchTimer = setTimeout(loadConversations, 180)
+      searchTimer = setTimeout(function () {
+        if (state.view === 'emails') return loadEmails()
+        return loadConversations()
+      }, 180)
     })
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
+      if (state.view === 'emails') {
+        loadEmails().then(function () {
+          if (state.activeEmailId) openEmail(state.activeEmailId)
+        })
+        return
+      }
       loadConversations().then(function () {
         if (state.activeContactId) openConversation(state.activeContactId)
       })
@@ -1051,6 +1223,14 @@ export function buildInboxHtml(): string {
           if (state.activeContactId) openConversation(state.activeContactId)
         })
       })
+    })
+
+    document.getElementById('view-conversations-btn').addEventListener('click', function () {
+      switchView('conversations')
+    })
+
+    document.getElementById('view-emails-btn').addEventListener('click', function () {
+      switchView('emails')
     })
 
     bootstrap()

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import { db } from '../db/client'
 import { logger } from '../utils/logger'
 
 type NotificationOutcome =
@@ -228,12 +229,59 @@ export async function sendLeadNotification(contact: NotificationContact, outcome
   })
 
   const config = getConfig(contact, outcome)
+  const resolvedTo = TEST_TO_EMAIL || config.to
+  const resolvedCc = TEST_TO_EMAIL ? null : (config.cc || CC_EMAIL || null)
 
-  await transporter.sendMail({
-    from: `Cameron Britt <${NOTIFICATION_FROM_EMAIL}>`,
-    to: TEST_TO_EMAIL || config.to,
-    cc: TEST_TO_EMAIL ? undefined : (config.cc || CC_EMAIL),
-    subject: config.subject,
-    html: config.html,
-  })
+  try {
+    const info = await transporter.sendMail({
+      from: `Cameron Britt <${NOTIFICATION_FROM_EMAIL}>`,
+      to: resolvedTo,
+      cc: resolvedCc || undefined,
+      subject: config.subject,
+      html: config.html,
+    })
+
+    await db.query(
+      `INSERT INTO email_log (
+         contact_id, client_id, category, outcome, recipient_to, recipient_cc,
+         subject, html_body, send_status, provider_message_id
+       )
+       SELECT id, client_id, 'lead_notification', $2, $3, $4, $5, $6, 'sent', $7
+       FROM contacts
+       WHERE phone_number = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [
+        contact.phone_number,
+        outcome,
+        resolvedTo,
+        resolvedCc,
+        config.subject,
+        config.html,
+        info.messageId || null,
+      ]
+    ).catch(() => {})
+  } catch (err: any) {
+    await db.query(
+      `INSERT INTO email_log (
+         contact_id, client_id, category, outcome, recipient_to, recipient_cc,
+         subject, html_body, send_status, error
+       )
+       SELECT id, client_id, 'lead_notification', $2, $3, $4, $5, $6, 'failed', $7
+       FROM contacts
+       WHERE phone_number = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [
+        contact.phone_number,
+        outcome,
+        resolvedTo,
+        resolvedCc,
+        config.subject,
+        config.html,
+        err.message || 'Email send failed',
+      ]
+    ).catch(() => {})
+    throw err
+  }
 }

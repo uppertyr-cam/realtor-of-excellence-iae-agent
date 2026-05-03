@@ -164,6 +164,24 @@ CREATE TABLE IF NOT EXISTS message_log (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─── EMAIL LOG ───────────────────────────────────────────────
+-- Audit trail of automated system emails sent for lead outcomes / notifications
+CREATE TABLE IF NOT EXISTS email_log (
+  id                  SERIAL PRIMARY KEY,
+  contact_id          TEXT REFERENCES contacts(id),
+  client_id           TEXT REFERENCES clients(id),
+  category            TEXT NOT NULL,
+  outcome             TEXT,
+  recipient_to        TEXT NOT NULL,
+  recipient_cc        TEXT,
+  subject             TEXT NOT NULL,
+  html_body           TEXT,
+  send_status         TEXT NOT NULL DEFAULT 'sent',
+  provider_message_id TEXT,
+  error               TEXT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ─── INDEXES ─────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_contacts_client ON contacts(client_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
@@ -173,6 +191,8 @@ CREATE INDEX IF NOT EXISTS idx_queue_client ON outbound_queue(client_id, status)
 CREATE INDEX IF NOT EXISTS idx_buffer_contact ON message_buffer(contact_id, received_at);
 CREATE INDEX IF NOT EXISTS idx_ai_responses_contact ON ai_responses(contact_id, status);
 CREATE INDEX IF NOT EXISTS idx_log_contact ON message_log(contact_id);
+CREATE INDEX IF NOT EXISTS idx_email_log_created ON email_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_log_contact ON email_log(contact_id);
 
 CREATE TABLE IF NOT EXISTS inbox_users (
   id            SERIAL PRIMARY KEY,

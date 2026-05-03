@@ -11,6 +11,7 @@ import crypto from 'crypto'
 import { buildInboxHtml } from './inbox/ui'
 import { createInboxUser, getInboxUserFromRequest, listInboxUsers, loginInboxUser, logoutInboxUser, requireInboxAuth, setInboxUserActive } from './inbox/auth'
 import { getConversationCounts, getConversationDetail, listConversations } from './inbox/queries'
+import { listEmailInbox } from './inbox/email-queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
 
@@ -73,6 +74,11 @@ app.get('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res
   const detail = await getConversationDetail(req.params.contactId)
   if (!detail) return res.status(404).json({ error: 'Not found' })
   res.json(detail)
+})
+
+app.get('/inbox/api/emails', requireInboxAuth, async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : ''
+  res.json({ emails: await listEmailInbox(q) })
 })
 
 app.post('/inbox/api/conversations/:contactId/reply', requireInboxAuth, async (req, res) => {

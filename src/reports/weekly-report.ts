@@ -632,6 +632,7 @@ export async function sendWeeklyReport() {
   const now = new Date().toLocaleDateString('en-ZA', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
+  const reportSubject = `${clientName} Weekly Client Report — ${now}`
 
   const footer = `
     <div style="background:#0B1220;padding:28px 36px 34px 36px;border-top:1px solid rgba(92,225,230,0.18);">
@@ -657,10 +658,10 @@ export async function sendWeeklyReport() {
       </table>
     </div>`
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: `IAE Agent <${FROM_EMAIL}>`,
     to: REPORT_EMAIL,
-    subject: `${clientName} Weekly Client Report — ${now}`,
+    subject: reportSubject,
     html: `
       <div style="margin:0;padding:32px 16px;background:#E8EDF2;">
         <table role="presentation" style="width:100%;border-collapse:collapse;">
@@ -763,6 +764,19 @@ export async function sendWeeklyReport() {
         </table>
       </div>`,
   })
+
+  await db.query(
+    `INSERT INTO email_log (
+       category, client_id, recipient_to, subject, html_body, send_status, provider_message_id
+     ) VALUES ('weekly_report', $1, $2, $3, $4, 'sent', $5)`,
+    [
+      clientId || null,
+      REPORT_EMAIL,
+      reportSubject,
+      `<div><strong>${clientName} weekly report</strong><br/>Report URL: <a href="${url}">${url}</a><br/>Interested: ${interestedCount} | Already bought: ${alreadyBoughtCount} | No reply: ${noReplyCount} | Renting: ${rentingCount} | Not interested: ${notInterestedCount}</div>`,
+      info.messageId || null,
+    ]
+  ).catch(() => {})
 
   logger.info('Weekly report sent', { to: REPORT_EMAIL, url })
   return url
