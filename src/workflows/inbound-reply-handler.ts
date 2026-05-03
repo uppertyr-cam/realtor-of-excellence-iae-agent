@@ -220,17 +220,6 @@ async function routeContact(
     return
   }
 
-  // 5.1 — Manual takeover
-  if (tags.includes('manual_takeover')) {
-    logger.info('Route: manual takeover', { contactId })
-    await removeTag(contactId, 'reply_generating')
-    await notifyAgent(contact, config, message)
-    await writeToCrm(
-      { contact_id: contactId, fields: { trigger_field: 'manual_takeover_notification' } },
-      config, contact.crm_callback_url
-    )
-    return
-  }
 
   // 7.0 — Loop counter locked
   if (loopCounter > config.loop_counter_max) {
@@ -414,7 +403,7 @@ async function sendNotification(
 
 /**
  * Route agent notification based on contact's workflow stage and tags
- * Priority: interested_in_purchasing > already_purchased > renting > senior_team_member > manual_takeover > default
+ * Priority: interested_in_purchasing > already_purchased > renting > senior_team_member > default
  */
 export async function notifyStageAgent(contact: any, config: any, message: string): Promise<void> {
   const stageAgents = config.stage_agents || {}
@@ -425,7 +414,6 @@ export async function notifyStageAgent(contact: any, config: any, message: strin
     'already_purchased',
     'renting',
     'senior_team_member',
-    'manual_takeover',
   ]
 
   // Find the highest-priority matching tag

@@ -84,11 +84,7 @@ async function processBumpJob(job: any) {
   if (contactRes.rowCount === 0) return
   const contact = contactRes.rows[0]
 
-  // Skip if contact has replied, been closed, or gone to manual takeover
-  if (
-    ['replied', 'closed', 'completed'].includes(contact.workflow_stage) ||
-    contact.tags?.includes('manual_takeover')
-  ) {
+  if (['replied', 'closed', 'completed'].includes(contact.workflow_stage)) {
     await db.query(`UPDATE outbound_queue SET status='cancelled' WHERE id=$1`, [job.id])
     return
   }

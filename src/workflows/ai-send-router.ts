@@ -215,10 +215,10 @@ async function handleKeyword(
 
   switch (keyword) {
     case 'not_interested':
-      await db.query(`UPDATE contacts SET workflow_stage='closed', tags=array_append(array_append(tags,'not_interested'),'manual_takeover') WHERE id=$1`, [contactId])
+      await db.query(`UPDATE contacts SET workflow_stage='closed', tags=array_append(tags,'not_interested') WHERE id=$1`, [contactId])
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['not-interested', 'manual-takeover'],
+        tags_add: ['not-interested'],
         note: `IAE: Lead is not interested.\n\nAI message: ${responseText}`,
         fields: { stage: 'Buyer Nurture', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Not Interested' } : undefined,
@@ -229,10 +229,10 @@ async function handleKeyword(
       break
 
     case 'renting':
-      await db.query(`UPDATE contacts SET tags=array_append(array_append(tags,'renting'),'manual_takeover') WHERE id=$1`, [contactId])
+      await db.query(`UPDATE contacts SET tags=array_append(tags,'renting') WHERE id=$1`, [contactId])
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['renting', 'manual-takeover'],
+        tags_add: ['renting'],
         note: `IAE: Lead is renting.\n\nAI message: ${responseText}`,
         fields: { stage: 'Buyer Nurture', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Interested in Renting' } : undefined,
@@ -275,10 +275,9 @@ async function handleKeyword(
     }
 
     case 'senior_team_member':
-      await db.query(`UPDATE contacts SET tags=array_append(tags,'manual_takeover') WHERE id=$1`, [contactId])
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['manual-takeover', 'over-to-senior'],
+        tags_add: ['over-to-senior'],
         note: `IAE: Escalated to senior team member.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Over to Senior Team Member' } : undefined,
       }, config, contact.crm_callback_url)
@@ -287,18 +286,17 @@ async function handleKeyword(
       break
 
     case 'interested_in_purchasing':
-      // Remove qualifying_questions, add interested_in_purchasing + manual_takeover (prevent duplicates)
       await db.query(
         `UPDATE contacts SET tags=array_remove(tags,'qualifying_questions') WHERE id=$1`,
         [contactId]
       )
       await db.query(
-        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover'])) WHERE id=$1`,
+        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing'])) WHERE id=$1`,
         [contactId]
       )
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['interested-in-purchasing', 'manual-takeover'],
+        tags_add: ['interested-in-purchasing'],
         note: `IAE: Lead is interested in purchasing.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Interested in Purchasing' } : undefined,
       }, config, contact.crm_callback_url)
@@ -313,12 +311,12 @@ async function handleKeyword(
         [contactId]
       )
       await db.query(
-        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'manual_takeover', 'qualified', 'buyer_qualified'])) WHERE id=$1`,
+        `UPDATE contacts SET tags=ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['interested_in_purchasing', 'qualified', 'buyer_qualified'])) WHERE id=$1`,
         [contactId]
       )
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['interested-in-purchasing', 'manual-takeover', 'qualified', 'buyer-qualified'],
+        tags_add: ['interested-in-purchasing', 'qualified', 'buyer-qualified'],
         note: `IAE: Lead has been fully qualified and is interested in purchasing.\n\nAI message: ${responseText}`,
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Buyer Qualified' } : undefined,
       }, config, contact.crm_callback_url)
@@ -328,10 +326,10 @@ async function handleKeyword(
       break
 
     case 'already_purchased':
-      await db.query(`UPDATE contacts SET tags=array_append(array_append(tags,'already_purchased'),'manual_takeover') WHERE id=$1`, [contactId])
+      await db.query(`UPDATE contacts SET tags=array_append(tags,'already_purchased') WHERE id=$1`, [contactId])
       await writeToCrm({
         contact_id: contactId,
-        tags_add: ['already-purchased', 'manual-takeover'],
+        tags_add: ['already-purchased'],
         note: `IAE: Lead has already purchased.\n\nAI message: ${responseText}`,
         fields: { stage: 'Data Base', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Already Purchased' } : undefined,

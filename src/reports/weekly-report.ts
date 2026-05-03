@@ -356,11 +356,10 @@ export async function buildWeeklyReport(): Promise<string> {
     for (const contact of contactsRes.rows) {
       const outcome = getOutcomeLabel(contact.tags || [])
       const updatedAt = contact.updated_at ? new Date(contact.updated_at).toLocaleDateString('en-ZA') : ''
-      const manualNote = (contact.tags || []).includes('manual_takeover') ? '⚠️ Manual Takeover\n' : ''
       const chatHistory = formatChatHistory(contact.ai_memory || '')
       const aiNoteTaker = contact.ai_note
-        ? manualNote + formatNotes(contact.ai_note)
-        : manualNote + formatChatHistory(contact.ai_memory || '')
+        ? formatNotes(contact.ai_note)
+        : formatChatHistory(contact.ai_memory || '')
       rows.push([contact.id, updatedAt, outcome, contact.first_name || '', contact.last_name || '', contact.phone_number, contact.email || '', chatHistory, aiNoteTaker, contact.crm_callback_url || ''])
     }
 
