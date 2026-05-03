@@ -249,7 +249,7 @@ export function buildInboxHtml(): string {
     }
     .thread-body {
       flex: 1;
-      overflow: hidden;
+      overflow: auto;
       padding: 24px;
       display: grid;
       grid-template-columns: minmax(0, 1fr) 300px;
@@ -279,6 +279,8 @@ export function buildInboxHtml(): string {
       box-shadow: 0 10px 28px rgba(23,33,31,0.06);
       position: sticky;
       top: 0;
+      max-height: calc(100vh - 150px);
+      overflow: auto;
     }
     .workflow-panel h4 {
       margin: 0 0 14px;
@@ -823,7 +825,10 @@ export function buildInboxHtml(): string {
             event.preventDefault()
             return
           }
-          if (target.closest('#thread-header') || target.closest('.workflow-panel') || target.closest('.thread-body')) {
+          if (target.closest('.workflow-panel')) {
+            return
+          }
+          if (target.closest('#thread-header') || target.closest('.thread-body')) {
             messagesNode.scrollTop += event.deltaY
             event.preventDefault()
             return
