@@ -658,11 +658,7 @@ export async function sendWeeklyReport() {
       </table>
     </div>`
 
-  const info = await transporter.sendMail({
-    from: `IAE Agent <${FROM_EMAIL}>`,
-    to: REPORT_EMAIL,
-    subject: reportSubject,
-    html: `
+  const reportHtml = `
       <div style="margin:0;padding:32px 16px;background:#E8EDF2;">
         <table role="presentation" style="width:100%;border-collapse:collapse;">
           <tr>
@@ -762,7 +758,13 @@ export async function sendWeeklyReport() {
             </td>
           </tr>
         </table>
-      </div>`,
+      </div>`
+
+  const info = await transporter.sendMail({
+    from: `IAE Agent <${FROM_EMAIL}>`,
+    to: REPORT_EMAIL,
+    subject: reportSubject,
+    html: reportHtml,
   })
 
   await db.query(
@@ -773,7 +775,7 @@ export async function sendWeeklyReport() {
       clientId || null,
       REPORT_EMAIL,
       reportSubject,
-      `<div><strong>${clientName} weekly report</strong><br/>Report URL: <a href="${url}">${url}</a><br/>Interested: ${interestedCount} | Already bought: ${alreadyBoughtCount} | No reply: ${noReplyCount} | Renting: ${rentingCount} | Not interested: ${notInterestedCount}</div>`,
+      reportHtml,
       info.messageId || null,
     ]
   ).catch(() => {})
