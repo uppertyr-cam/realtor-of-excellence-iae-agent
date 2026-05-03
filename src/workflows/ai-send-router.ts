@@ -66,10 +66,15 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
       `UPDATE ai_responses SET status='failed' WHERE id=$1`,
       [aiResponse.id]
     )
+    await db.query(
+      `UPDATE contacts SET tags=array_append(tags,'non_whatsapp') WHERE id=$1`,
+      [contactId]
+    )
     await writeToCrm(
-      { contact_id: contactId, tags_add: ['send_failed'], note: `IAE: AI message send failed — ${sendResult.error}` },
+      { contact_id: contactId, tags_add: ['send_failed', 'non_whatsapp'], note: `IAE: AI message send failed — ${sendResult.error}` },
       config, contact.crm_callback_url
     )
+    leadNotifications.sendLeadNotification(contact, 'whatsapp_failed').catch(() => {})
     return
   }
 
@@ -215,6 +220,7 @@ async function handleKeyword(
         contact_id: contactId,
         tags_add: ['not-interested', 'manual-takeover'],
         note: `IAE: Lead is not interested.\n\nAI message: ${responseText}`,
+        fields: { stage: 'Buyer Nurture', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Not Interested' } : undefined,
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)
@@ -228,9 +234,12 @@ async function handleKeyword(
         contact_id: contactId,
         tags_add: ['renting', 'manual-takeover'],
         note: `IAE: Lead is renting.\n\nAI message: ${responseText}`,
+        fields: { stage: 'Buyer Nurture', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Interested in Renting' } : undefined,
       }, config, contact.crm_callback_url)
+      await cancelPendingBumps(contactId)
       writeContactNote(contact, config, chatHistory, 'Interested in Renting').catch(() => {})
+      leadNotifications.sendLeadNotification(contact, 'renting').catch(() => {})
       break
 
     case 'reach_back_out': {
@@ -239,6 +248,7 @@ async function handleKeyword(
         contact_id: contactId,
         tags_add: ['reach-back-out'],
         note: `IAE: Lead asked to be reached back out to.\n\nScheduled: ${scheduledAt ?? 'not specified'}\n\nAI message: ${responseText}`,
+        fields: { stage: 'Buyer Nurture', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Reach Back Out' } : undefined,
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)
@@ -323,6 +333,7 @@ async function handleKeyword(
         contact_id: contactId,
         tags_add: ['already-purchased', 'manual-takeover'],
         note: `IAE: Lead has already purchased.\n\nAI message: ${responseText}`,
+        fields: { stage: 'Data Base', assignedTo: 'ROE Admin' },
         opportunity: config.pipeline_id ? { pipeline_id: config.pipeline_id, stage_id: config.pipeline_stage_id, name: 'Already Purchased' } : undefined,
       }, config, contact.crm_callback_url)
       await cancelPendingBumps(contactId)

@@ -6,6 +6,8 @@ type NotificationOutcome =
   | 'interested_in_purchasing'
   | 'not_interested'
   | 'already_purchased'
+  | 'renting'
+  | 'whatsapp_failed'
 
 type NotificationContact = {
   first_name: string | null
@@ -21,6 +23,8 @@ const CC_EMAIL = process.env.NOTIFICATION_CC_EMAIL || ''
 const TEST_TO_EMAIL = process.env.NOTIFICATION_TEST_TO || ''
 const TO_QUALIFIED = process.env.NOTIFICATION_TO_QUALIFIED || ''
 const TO_CLOSED = process.env.NOTIFICATION_TO_CLOSED || ''
+const TO_INTERESTED = process.env.NOTIFICATION_TO_INTERESTED || ''
+const TO_RENTING = process.env.NOTIFICATION_TO_RENTING || ''
 
 const FOOTER_HTML = `
   <div style="background:#0B1220;padding:28px 36px 34px 36px;border-top:1px solid rgba(92,225,230,0.18);">
@@ -118,13 +122,14 @@ function buildEmailHtml(params: {
   `
 }
 
-function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
+function getConfig(contact: NotificationContact, outcome: NotificationOutcome): { to: string; subject: string; html: string; cc?: string } {
   const name = fullName(contact)
 
   switch (outcome) {
     case 'buyer_qualified':
       return {
         to: TO_QUALIFIED,
+        cc: TO_CLOSED,
         subject: `[Buyer Qualified] ${name}`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — BUYER QUALIFIED',
@@ -137,13 +142,14 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
       }
     case 'interested_in_purchasing':
       return {
-        to: TO_QUALIFIED,
+        to: TO_INTERESTED,
+        cc: TO_CLOSED,
         subject: `[Buyer Interested] ${name} — Qualification Pending`,
         html: buildEmailHtml({
           label: 'LEAD NOTIFICATION — BUYER INTERESTED',
           heading: 'Interested in Buying — Not Yet Qualified',
           headingColor: '#5CE1E6',
-          greeting: 'Hi Vennessa,',
+          greeting: 'Hi Dorinda,',
           bodyCopy: `<strong>${name}</strong> has expressed interest in purchasing a property but has not yet completed full qualification. Please follow up and progress the qualification process when ready.`,
           contact,
         }),
@@ -174,6 +180,33 @@ function getConfig(contact: NotificationContact, outcome: NotificationOutcome) {
           contact,
         }),
       }
+    case 'renting':
+      return {
+        to: TO_RENTING,
+        cc: TO_CLOSED,
+        subject: `[Renting] ${name}`,
+        html: buildEmailHtml({
+          label: 'LEAD NOTIFICATION — RENTING',
+          heading: 'Interested in Renting',
+          headingColor: '#5CE1E6',
+          greeting: 'Hi James,',
+          bodyCopy: `<strong>${name}</strong> has indicated they are looking to rent rather than purchase a property. Please follow up and assist accordingly.`,
+          contact,
+        }),
+      }
+    case 'whatsapp_failed':
+      return {
+        to: TO_CLOSED,
+        subject: `[WhatsApp Failed] ${name}`,
+        html: buildEmailHtml({
+          label: 'LEAD NOTIFICATION — MESSAGE FAILED',
+          heading: 'WhatsApp Message Did Not Go Through',
+          headingColor: '#9CA3AF',
+          greeting: 'Hi Charmaine,',
+          bodyCopy: `We attempted to send a WhatsApp message to <strong>${name}</strong> but the message did not go through. The number may be incorrect or not registered on WhatsApp. Please have a look and update the database.`,
+          contact,
+        }),
+      }
   }
 }
 
@@ -199,7 +232,7 @@ export async function sendLeadNotification(contact: NotificationContact, outcome
   await transporter.sendMail({
     from: `Cameron Britt <${NOTIFICATION_FROM_EMAIL}>`,
     to: TEST_TO_EMAIL || config.to,
-    cc: TEST_TO_EMAIL ? undefined : CC_EMAIL,
+    cc: TEST_TO_EMAIL ? undefined : (config.cc || CC_EMAIL),
     subject: config.subject,
     html: config.html,
   })

@@ -58,6 +58,9 @@ expect eof
 | `NOTIFICATION_APP_PASSWORD` | Optional dedicated app password for notification emails, falls back to `GMAIL_APP_PASSWORD` | ✅ Set |
 | `NOTIFICATION_TEST_TO` | Override recipient for internal lead notification tests | ✅ Set |
 | `NOTIFICATION_CC_EMAIL` | CC address on all lead notification emails (e.g. UpperTyr internal) | ✅ Set |
-| `NOTIFICATION_TO_QUALIFIED` | Comma-separated recipient list for buyer_qualified / interested_in_purchasing notifications | ✅ Set |
-| `NOTIFICATION_TO_CLOSED` | Comma-separated recipient list for not_interested / already_purchased notifications | ✅ Set |
+| `NOTIFICATION_TO_QUALIFIED` | Recipient for buyer_qualified notifications (Vennessa) | ✅ Set |
+| `NOTIFICATION_TO_CLOSED` | Recipient for not_interested / already_purchased / whatsapp_failed notifications (Charmaine) | ✅ Set |
+| `NOTIFICATION_TO_INTERESTED` | Recipient for interested_in_purchasing notifications (Dorinda) | ✅ Set |
+| `NOTIFICATION_TO_RENTING` | Recipient for renting notifications (James) | ✅ Set |
+| `NOTIFICATION_CC_EMAIL` | CC on buyer_qualified / interested_in_purchasing / renting emails (Charmaine) | ✅ Set |
 | `GOOGLE_SHEETS_SHARE_EMAIL` | Google account granted write access to newly created dashboard sheets | ✅ Set |

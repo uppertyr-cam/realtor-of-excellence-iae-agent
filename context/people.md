@@ -20,6 +20,11 @@
 
 ## Agent Roster
 
+- Dorinda — dorinda@realgroup.co.za — receives interested_in_purchasing notifications
+- Vennessa — reception@realgroup.co.za — receives buyer_qualified notifications
+- James — james@realgroup.co.za — receives renting notifications
+- Charmaine — charmaine@realgroup.co.za — receives not_interested / already_purchased / whatsapp_failed notifications, and is CC'd on Dorinda / Vennessa / James emails
+- Natasha / ROE Admin — admin@realgroup.co.za — CRM assigned_to value for terminal outcomes (Data Base / Buyer Nurture)
 - Wayne Lawson — placeholder, to be verified with client
 - Josh Weston — placeholder, to be verified with client
 - Tracy Van Vuuren — placeholder, to be verified with client

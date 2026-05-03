@@ -232,6 +232,7 @@ async function processBumpCloseJob(job: any) {
       contact_id: contact.id,
       tags_add: ['bump_no_reply'],
       note: `IAE: No reply after 3 bumps (72h window).\n\nConversation history:\n${contact.ai_memory || 'No conversation recorded.'}\n\nTimestamp: ${new Date().toISOString()}`,
+      fields: { stage: 'Data Base', assignedTo: 'ROE Admin' },
     },
     config, contact.crm_callback_url
   )
