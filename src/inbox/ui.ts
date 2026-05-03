@@ -259,6 +259,13 @@ export function buildInboxHtml(): string {
     .messages-column {
       min-height: 0;
       height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .messages-scroll {
+      flex: 1;
+      min-height: 0;
       overflow: auto;
       padding-right: 4px;
       overscroll-behavior: contain;
@@ -270,6 +277,54 @@ export function buildInboxHtml(): string {
       justify-content: flex-end;
       gap: 16px;
       padding-bottom: 8px;
+    }
+    .composer {
+      border-top: 1px solid rgba(216,209,196,0.9);
+      padding-top: 14px;
+      display: grid;
+      gap: 10px;
+      background: rgba(243,241,234,0.88);
+      backdrop-filter: blur(8px);
+    }
+    .composer textarea {
+      width: 100%;
+      min-height: 92px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      padding: 14px 16px;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+      resize: vertical;
+      background: #fff;
+      color: var(--ink);
+    }
+    .composer-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .composer-row button {
+      width: auto;
+      margin-top: 0;
+      padding: 12px 18px;
+      border-radius: 14px;
+    }
+    .composer-row label {
+      margin: 0;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      font-family: Arial, sans-serif;
+      color: var(--muted);
+    }
+    .composer-row input[type="checkbox"] {
+      width: auto;
+      padding: 0;
+      margin: 0;
     }
     .workflow-panel {
       background: rgba(255,255,255,0.74);
@@ -645,19 +700,11 @@ export function buildInboxHtml(): string {
           (detail.contact.is_stuck ? '<div class="workflow-alert">This contact has a pending workflow step that is already overdue.</div>' : '') +
           '<div class="workflow-actions">' +
             '<div class="action-group">' +
-              '<h5>Assignment</h5>' +
-              '<input id="assigned-to-input" type="text" value="' + escapeHtml(detail.contact.assigned_to || '') + '" placeholder="Assign to team member" />' +
+              '<h5>CRM assigned agent</h5>' +
+              '<input id="assigned-to-input" type="text" value="' + escapeHtml(detail.contact.assigned_to || '') + '" placeholder="Syncs with CRM assigned agent" />' +
               '<div class="action-row">' +
                 '<button id="save-assignment-btn" type="button" class="ghost">Save Assignment</button>' +
                 '<button id="clear-assignment-btn" type="button" class="ghost">Clear</button>' +
-              '</div>' +
-            '</div>' +
-            '<div class="action-group">' +
-              '<h5>Manual reply</h5>' +
-              '<textarea id="manual-reply-input" placeholder="Write a reply to this lead..."></textarea>' +
-              '<div class="action-row">' +
-                '<button id="send-reply-btn" type="button">Send Reply</button>' +
-                '<label><input id="pause-after-send" type="checkbox" /> Pause automation after send</label>' +
               '</div>' +
             '</div>' +
             pendingAiReply +
@@ -668,12 +715,21 @@ export function buildInboxHtml(): string {
                 '<button id="resolve-conversation-btn" type="button" class="ghost">Mark Resolved</button>' +
               '</div>' +
             '</div>' +
-            '<div id="action-feedback" class="action-feedback"></div>' +
           '</div>' +
         '</aside>'
 
-      body.innerHTML = '<div id="messages-column" class="messages-column"><div class="messages-stack">' + (messagesHtml || '<div class="thread-empty">No messages recorded yet.</div>') + '</div></div>' + workflowHtml
-      const messagesNode = document.getElementById('messages-column')
+      const composerHtml =
+        '<div class="composer">' +
+          '<textarea id="manual-reply-input" placeholder="Type a WhatsApp-style reply..."></textarea>' +
+          '<div class="composer-row">' +
+            '<label><input id="pause-after-send" type="checkbox" /> Pause automation after send</label>' +
+            '<button id="send-reply-btn" type="button">Send Reply</button>' +
+          '</div>' +
+          '<div id="action-feedback" class="action-feedback"></div>' +
+        '</div>'
+
+      body.innerHTML = '<div id="messages-column" class="messages-column"><div id="messages-scroll" class="messages-scroll"><div class="messages-stack">' + (messagesHtml || '<div class="thread-empty">No messages recorded yet.</div>') + '</div></div>' + composerHtml + '</div>' + workflowHtml
+      const messagesNode = document.getElementById('messages-scroll')
       messagesNode.scrollTop = messagesNode.scrollHeight
       bindThreadScrollProxy()
       bindThreadActions(detail)
@@ -815,7 +871,7 @@ export function buildInboxHtml(): string {
         const auth = document.getElementById('auth-shell')
         if (!app || app.classList.contains('hidden') || !auth || !auth.classList.contains('hidden')) return
 
-        const messagesNode = document.getElementById('messages-column')
+        const messagesNode = document.getElementById('messages-scroll')
         if (!messagesNode) return
 
         const target = event.target

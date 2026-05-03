@@ -1,4 +1,6 @@
 import { db } from '../db/client'
+import { getClientConfig } from '../config/client-config'
+import { getAssignedToFromCrm } from '../crm/adapter'
 
 type ConversationFilter = 'all' | 'unread' | 'read'
 
@@ -168,6 +170,19 @@ export async function getConversationDetail(contactId: string) {
 
   if (contactRes.rowCount === 0) return null
 
+  const contactRow = contactRes.rows[0]
+  try {
+    const config = await getClientConfig(contactRow.client_id)
+    const crmAssignedTo = await getAssignedToFromCrm(contactId, config)
+    if (crmAssignedTo !== undefined && crmAssignedTo !== contactRow.assigned_to) {
+      await db.query(
+        `UPDATE contacts SET assigned_to=$1, updated_at=NOW() WHERE id=$2`,
+        [crmAssignedTo, contactId]
+      )
+      contactRow.assigned_to = crmAssignedTo
+    }
+  } catch {}
+
   const messageRes = await db.query(
     `SELECT id, direction, channel, content, message_type, created_at
      FROM message_log
@@ -178,19 +193,19 @@ export async function getConversationDetail(contactId: string) {
 
   return {
     contact: {
-      ...contactRes.rows[0],
-      workflow_status: getOutcomeLabel(contactRes.rows[0].tags || []),
-      next_action_label: getNextActionLabel(contactRes.rows[0].next_action_type || null),
+      ...contactRow,
+      workflow_status: getOutcomeLabel(contactRow.tags || []),
+      next_action_label: getNextActionLabel(contactRow.next_action_type || null),
       automation_state:
-        Number(contactRes.rows[0].paused_count || 0) > 0
+        Number(contactRow.paused_count || 0) > 0
           ? 'paused'
-          : Number(contactRes.rows[0].pending_count || 0) > 0
+          : Number(contactRow.pending_count || 0) > 0
             ? 'active'
             : 'idle',
-      pending_ai_response_id: contactRes.rows[0].pending_ai_response_id || null,
-      pending_ai_response_text: contactRes.rows[0].pending_ai_response_text || null,
-      pending_ai_created_at: contactRes.rows[0].pending_ai_created_at || null,
-      is_stuck: !!contactRes.rows[0].next_action_due && new Date(contactRes.rows[0].next_action_due).getTime() < Date.now(),
+      pending_ai_response_id: contactRow.pending_ai_response_id || null,
+      pending_ai_response_text: contactRow.pending_ai_response_text || null,
+      pending_ai_created_at: contactRow.pending_ai_created_at || null,
+      is_stuck: !!contactRow.next_action_due && new Date(contactRow.next_action_due).getTime() < Date.now(),
     },
     messages: messageRes.rows,
   }

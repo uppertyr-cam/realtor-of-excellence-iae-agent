@@ -38,6 +38,24 @@ export async function writeToCrm(
   }
 }
 
+export async function getAssignedToFromCrm(
+  contactId: string,
+  config: ClientConfig
+): Promise<string | null | undefined> {
+  try {
+    switch (config.crm_type.toLowerCase()) {
+      case 'followupboss':
+      case 'fub':
+        return await getFollowUpBossAssignedTo(contactId, config)
+      default:
+        return undefined
+    }
+  } catch (err: any) {
+    logger.warn('CRM assigned-to fetch failed', { contact_id: contactId, crm: config.crm_type, error: err.message })
+    return undefined
+  }
+}
+
 async function writeHubspot(update: CrmUpdate, config: ClientConfig) {
   const base = config.crm_base_url || 'https://api.hubapi.com'
   const headers = { Authorization: `Bearer ${config.crm_api_key}` }
@@ -119,6 +137,13 @@ async function writeFollowUpBoss(update: CrmUpdate, config: ClientConfig) {
       body: update.note,
     }, { auth })
   }
+}
+
+async function getFollowUpBossAssignedTo(contactId: string, config: ClientConfig): Promise<string | null> {
+  const base = config.crm_base_url || 'https://api.followupboss.com/v1'
+  const auth = { username: config.crm_api_key ?? '', password: '' }
+  const current = await axios.get(`${base}/people/${contactId}`, { auth })
+  return current.data?.assignedTo || null
 }
 
 async function writeGeneric(update: CrmUpdate, callbackUrl?: string | null) {
