@@ -131,6 +131,7 @@ export async function getConversationDetail(contactId: string) {
        queue_next.message_type AS next_action_type,
        queue_next.status AS next_action_status,
        queue_next.scheduled_at AS next_action_due,
+       wa_window.last_inbound_at AS whatsapp_last_inbound_at,
        pending_ai.id AS pending_ai_response_id,
        pending_ai.response_text AS pending_ai_response_text,
        pending_ai.created_at AS pending_ai_created_at,
@@ -147,6 +148,15 @@ export async function getConversationDetail(contactId: string) {
        ORDER BY CASE WHEN oq.status = 'pending' THEN 0 ELSE 1 END, oq.scheduled_at ASC, oq.id ASC
        LIMIT 1
      ) queue_next ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT created_at AS last_inbound_at
+       FROM message_log ml
+       WHERE ml.contact_id = c.id
+         AND ml.direction = 'inbound'
+         AND ml.channel = 'whatsapp'
+       ORDER BY ml.created_at DESC, ml.id DESC
+       LIMIT 1
+     ) wa_window ON TRUE
      LEFT JOIN LATERAL (
        SELECT id, response_text, created_at
        FROM ai_responses ar
@@ -205,6 +215,11 @@ export async function getConversationDetail(contactId: string) {
       pending_ai_response_id: contactRow.pending_ai_response_id || null,
       pending_ai_response_text: contactRow.pending_ai_response_text || null,
       pending_ai_created_at: contactRow.pending_ai_created_at || null,
+      whatsapp_last_inbound_at: contactRow.whatsapp_last_inbound_at || null,
+      whatsapp_window_open:
+        (contactRow.channel === 'whatsapp' || contactRow.channel === 'whatsapp_sms_fallback') &&
+        !!contactRow.whatsapp_last_inbound_at &&
+        Date.now() - new Date(contactRow.whatsapp_last_inbound_at).getTime() <= 24 * 60 * 60 * 1000,
       is_stuck: !!contactRow.next_action_due && new Date(contactRow.next_action_due).getTime() < Date.now(),
     },
     messages: messageRes.rows,

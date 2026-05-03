@@ -21,6 +21,11 @@ type ContactContext = {
   pending_answer: string | null
 }
 
+type WhatsAppWindowState = {
+  isOpen: boolean
+  lastInboundAt: string | null
+}
+
 async function getContactContext(contactId: string): Promise<{ contact: ContactContext; config: any }> {
   const contactRes = await db.query(`SELECT * FROM contacts WHERE id=$1`, [contactId])
   if (contactRes.rowCount === 0) throw new Error('Conversation not found')
@@ -43,6 +48,27 @@ async function sendMessage(contact: ContactContext, config: any, text: string): 
   if (!result.success) throw new Error(result.error || 'SMS send failed')
 }
 
+async function getWhatsAppWindowState(contactId: string): Promise<WhatsAppWindowState> {
+  const result = await db.query(
+    `SELECT created_at
+     FROM message_log
+     WHERE contact_id=$1
+       AND direction='inbound'
+       AND channel='whatsapp'
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [contactId]
+  )
+
+  if (result.rowCount === 0) {
+    return { isOpen: false, lastInboundAt: null }
+  }
+
+  const lastInboundAt = result.rows[0].created_at
+  const isOpen = Date.now() - new Date(lastInboundAt).getTime() <= 24 * 60 * 60 * 1000
+  return { isOpen, lastInboundAt }
+}
+
 function dedupeTags(tags: string[], additions: string[] = [], removals: string[] = []) {
   return Array.from(new Set([...(tags || []), ...additions])).filter((tag) => !removals.includes(tag))
 }
@@ -62,6 +88,15 @@ export async function sendManualReply(contactId: string, message: string, pauseA
 
   const { contact, config } = await getContactContext(contactId)
   const channel = contact.channel || config.channel
+  if (channel === 'whatsapp') {
+    const windowState = await getWhatsAppWindowState(contactId)
+    if (!windowState.isOpen) {
+      const detail = windowState.lastInboundAt
+        ? `Last inbound WhatsApp message was ${new Date(windowState.lastInboundAt).toISOString()}.`
+        : 'No inbound WhatsApp message is recorded for this conversation.'
+      throw new Error(`WhatsApp freeform replies only work within 24 hours of the lead's last message. ${detail}`)
+    }
+  }
 
   await sendMessage(contact, config, trimmed)
 

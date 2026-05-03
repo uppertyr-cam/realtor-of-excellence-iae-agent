@@ -286,6 +286,9 @@ export function buildInboxHtml(): string {
       background: rgba(243,241,234,0.88);
       backdrop-filter: blur(8px);
     }
+    .composer.locked {
+      opacity: 0.8;
+    }
     .composer textarea {
       width: 100%;
       min-height: 92px;
@@ -311,6 +314,11 @@ export function buildInboxHtml(): string {
       margin-top: 0;
       padding: 12px 18px;
       border-radius: 14px;
+    }
+    .composer-row button:disabled,
+    .composer textarea:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     .composer-row label {
       margin: 0;
@@ -441,6 +449,16 @@ export function buildInboxHtml(): string {
     }
     .action-feedback.error {
       color: var(--danger);
+    }
+    .window-warning {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #fde7c9;
+      color: #8a4b00;
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid rgba(138,75,0,0.12);
     }
     .message {
       max-width: 72%;
@@ -669,6 +687,12 @@ export function buildInboxHtml(): string {
       }).join('')
 
       const automationPaused = detail.contact.automation_state === 'paused'
+      const whatsappWindowClosed = detail.contact.channel === 'whatsapp' && !detail.contact.whatsapp_window_open
+      const whatsappWindowMessage = whatsappWindowClosed
+        ? '<div class="window-warning">WhatsApp freeform replies only work within 24 hours of the lead\\'s last message.' +
+          (detail.contact.whatsapp_last_inbound_at ? ' Last inbound: ' + escapeHtml(formatDate(detail.contact.whatsapp_last_inbound_at)) + '.' : ' No inbound WhatsApp message is recorded for this thread.') +
+          '</div>'
+        : ''
       const pendingAiReply = detail.contact.pending_ai_response_text
         ? '<div class="action-group">' +
             '<h5>Pending AI reply</h5>' +
@@ -719,11 +743,12 @@ export function buildInboxHtml(): string {
         '</aside>'
 
       const composerHtml =
-        '<div class="composer">' +
-          '<textarea id="manual-reply-input" placeholder="Type a WhatsApp-style reply..."></textarea>' +
+        '<div class="composer' + (whatsappWindowClosed ? ' locked' : '') + '">' +
+          whatsappWindowMessage +
+          '<textarea id="manual-reply-input" placeholder="Type a WhatsApp-style reply..."' + (whatsappWindowClosed ? ' disabled' : '') + '></textarea>' +
           '<div class="composer-row">' +
             '<label><input id="pause-after-send" type="checkbox" /> Pause automation after send</label>' +
-            '<button id="send-reply-btn" type="button">Send Reply</button>' +
+            '<button id="send-reply-btn" type="button"' + (whatsappWindowClosed ? ' disabled' : '') + '>Send Reply</button>' +
           '</div>' +
           '<div id="action-feedback" class="action-feedback"></div>' +
         '</div>'
