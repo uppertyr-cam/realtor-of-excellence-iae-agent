@@ -12,6 +12,7 @@ import { buildInboxHtml } from './inbox/ui'
 import { createInboxUser, getInboxUserFromRequest, listInboxUsers, loginInboxUser, logoutInboxUser, requireInboxAuth, setInboxUserActive } from './inbox/auth'
 import { getConversationDetail, listConversations } from './inbox/queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
+import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -69,6 +70,60 @@ app.get('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res
   const detail = await getConversationDetail(req.params.contactId)
   if (!detail) return res.status(404).json({ error: 'Not found' })
   res.json(detail)
+})
+
+app.post('/inbox/api/conversations/:contactId/reply', requireInboxAuth, async (req, res) => {
+  try {
+    await sendManualReply(
+      req.params.contactId,
+      String(req.body?.message || ''),
+      Boolean(req.body?.pauseAutomationAfterSend)
+    )
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/inbox/api/conversations/:contactId/approve-ai', requireInboxAuth, async (req, res) => {
+  try {
+    const message = req.body?.message
+    await approvePendingAiReply(
+      req.params.contactId,
+      typeof message === 'string' ? message : undefined
+    )
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/inbox/api/conversations/:contactId/resolve', requireInboxAuth, async (req, res) => {
+  try {
+    await setConversationResolved(req.params.contactId)
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/inbox/api/conversations/:contactId/automation', requireInboxAuth, async (req, res) => {
+  try {
+    await setAutomationPaused(req.params.contactId, Boolean(req.body?.paused))
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/inbox/api/conversations/:contactId/assign', requireInboxAuth, async (req, res) => {
+  try {
+    const assignedTo = typeof req.body?.assignedTo === 'string' ? req.body.assignedTo : null
+    await assignConversation(req.params.contactId, assignedTo)
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
 })
 
 app.get('/inbox/api/events', requireInboxAuth, (req, res) => {
@@ -621,13 +676,14 @@ const DEFAULT_BULK_IMPORT_STAGES = [
   'Cold Buyer', 'Future Buyer', 'Buyer Nurture',
 ]
 
-// Pull today's batch of Property 24 Leads from FUB — fetches only as many pages as needed
-// to fill the daily_limit. Stops as soon as enough new contacts are found.
+// Pull today's batch of Property24 Leads from FUB — pages through contacts, filters by
+// source/stage/lastContacted in app code, stops as soon as daily_limit new contacts are found.
 // Body: { client_id, dry_run, source, stages, last_contacted_empty, min_days, max_days, daily_limit, batch_delay_ms }
 app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
   const client_id          = req.body.client_id || 'realtor_of_excellence'
   const dry_run            = !!req.body.dry_run
-  const source: string     = req.body.source || 'Property 24 Leads'
+  // FUB stores this source as "Property24 Leads" (no space)
+  const source: string     = req.body.source || 'Property24 Leads'
   const stages: string[]   = req.body.stages || DEFAULT_BULK_IMPORT_STAGES
   const lastContactedEmpty = !!req.body.last_contacted_empty
   const minDays: number | undefined = req.body.min_days !== undefined ? Number(req.body.min_days) : undefined
@@ -643,43 +699,42 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
 
     const fubBase = config.crm_base_url || 'https://api.followupboss.com/v1'
     const auth    = { username: config.crm_api_key, password: '' }
+    const limit   = dailyLimit ?? 50
+    const PAGE    = 100
 
     const triggered: { contact_id: string; name: string; phone: string }[] = []
     const skipped:   { contact_id: string; name: string; reason: string }[] = []
     let totalFetched = 0
+    let offset = 0
+    let done = false
 
-    // How many to ask FUB for — exactly the daily limit (or a safe cap if no limit set)
-    const fetchLimit = dailyLimit ?? 50
-
-    outer:
-    for (const stage of stages) {
-      const remaining = fetchLimit - triggered.length
-      if (remaining <= 0) break
-
+    // FUB doesn't support source/stage query params — fetch pages and filter in app code
+    while (!done) {
       const r = await axios.get(`${fubBase}/people`, {
         auth,
-        params: { limit: remaining, source, stage },
+        params: { limit: PAGE, offset, sort: '-created' },
       })
       const page: any[] = r.data?.people || []
       totalFetched += page.length
 
       for (const person of page) {
-        // Date filter
-        const lc: string | null = person.lastContacted || null
-        let passes = false
-        if (lastContactedEmpty) {
-          passes = lc === null || lc === ''
-        } else if (minDays !== undefined && maxDays !== undefined) {
-          if (lc) {
-            const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
-            passes = days >= minDays && days <= maxDays
-          }
-        } else {
-          passes = true
-        }
-        if (!passes) continue
+        if (triggered.length >= limit) { done = true; break }
 
-        if (triggered.length >= fetchLimit) break outer
+        // Source filter
+        if (person.source !== source) continue
+
+        // Stage filter
+        if (!stages.includes(person.stage)) continue
+
+        // Last contacted filter
+        const lc: string | null = person.lastContacted || null
+        if (lastContactedEmpty) {
+          if (!(lc === null || lc === '')) continue
+        } else if (minDays !== undefined && maxDays !== undefined) {
+          if (!lc) continue
+          const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
+          if (!(days >= minDays && days <= maxDays)) continue
+        }
 
         const id    = person.id?.toString()
         const name  = `${person.firstName || ''} ${person.lastName || ''}`.trim()
@@ -720,6 +775,9 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
           if (batchDelayMs > 0) await new Promise(r => setTimeout(r, batchDelayMs))
         }
       }
+
+      if (page.length < PAGE) break  // reached end of FUB contacts
+      offset += PAGE
     }
 
     res.json({
