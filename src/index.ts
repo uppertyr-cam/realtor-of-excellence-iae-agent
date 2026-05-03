@@ -615,6 +615,134 @@ app.post('/admin/trigger-contact', requireAdminSecret, async (req, res) => {
   }
 })
 
+// ─── BULK IMPORT ─────────────────────────────────────────────
+const DEFAULT_BULK_IMPORT_STAGES = [
+  'Lead', 'Buyer', 'Hot Buyer', 'Warm Buyer',
+  'Cold Buyer', 'Future Buyer', 'Buyer Nurture',
+]
+
+// Pull today's batch of Property 24 Leads from FUB — fetches only as many pages as needed
+// to fill the daily_limit. Stops as soon as enough new contacts are found.
+// Body: { client_id, dry_run, source, stages, last_contacted_empty, min_days, max_days, daily_limit, batch_delay_ms }
+app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
+  const client_id          = req.body.client_id || 'realtor_of_excellence'
+  const dry_run            = !!req.body.dry_run
+  const source: string     = req.body.source || 'Property 24 Leads'
+  const stages: string[]   = req.body.stages || DEFAULT_BULK_IMPORT_STAGES
+  const lastContactedEmpty = !!req.body.last_contacted_empty
+  const minDays: number | undefined = req.body.min_days !== undefined ? Number(req.body.min_days) : undefined
+  const maxDays: number | undefined = req.body.max_days !== undefined ? Number(req.body.max_days) : undefined
+  const dailyLimit: number | undefined = req.body.daily_limit !== undefined ? Number(req.body.daily_limit) : undefined
+  const batchDelayMs       = req.body.batch_delay_ms !== undefined ? Number(req.body.batch_delay_ms) : 200
+
+  try {
+    const { getClientConfig } = await import('./config/client-config')
+    const { db } = await import('./db/client')
+    const config = await getClientConfig(client_id)
+    if (!config.crm_api_key) return res.status(400).json({ error: 'No crm_api_key on client' })
+
+    const fubBase = config.crm_base_url || 'https://api.followupboss.com/v1'
+    const auth    = { username: config.crm_api_key, password: '' }
+
+    const triggered: { contact_id: string; name: string; phone: string }[] = []
+    const skipped:   { contact_id: string; name: string; reason: string }[] = []
+    let totalFetched = 0
+
+    // How many to ask FUB for — exactly the daily limit (or a safe cap if no limit set)
+    const fetchLimit = dailyLimit ?? 50
+
+    outer:
+    for (const stage of stages) {
+      const remaining = fetchLimit - triggered.length
+      if (remaining <= 0) break
+
+      const r = await axios.get(`${fubBase}/people`, {
+        auth,
+        params: { limit: remaining, source, stage },
+      })
+      const page: any[] = r.data?.people || []
+      totalFetched += page.length
+
+      for (const person of page) {
+        // Date filter
+        const lc: string | null = person.lastContacted || null
+        let passes = false
+        if (lastContactedEmpty) {
+          passes = lc === null || lc === ''
+        } else if (minDays !== undefined && maxDays !== undefined) {
+          if (lc) {
+            const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
+            passes = days >= minDays && days <= maxDays
+          }
+        } else {
+          passes = true
+        }
+        if (!passes) continue
+
+        if (triggered.length >= fetchLimit) break outer
+
+        const id    = person.id?.toString()
+        const name  = `${person.firstName || ''} ${person.lastName || ''}`.trim()
+        const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+
+        if (!phones.length) {
+          skipped.push({ contact_id: id, name, reason: 'no phone number' })
+          continue
+        }
+
+        // Skip contacts already in DB
+        const existing = await db.query(
+          'SELECT id FROM contacts WHERE client_id = $1 AND id = $2',
+          [client_id, id],
+        )
+        if (existing.rows.length > 0) {
+          skipped.push({ contact_id: id, name, reason: 'already imported' })
+          continue
+        }
+
+        const payload = {
+          contact_id:    id,
+          phone_number:  phones[0],
+          phone_numbers: phones.length > 1 ? phones : undefined,
+          first_name:    person.firstName || '',
+          last_name:     person.lastName,
+          email:         person.emails?.[0]?.value,
+          client_id,
+          assigned_to:   person.assignedTo || undefined,
+        }
+
+        triggered.push({ contact_id: id, name, phone: phones[0] })
+
+        if (!dry_run) {
+          handleCrmWebhook(payload, 'followupboss').catch((err) => {
+            logger.error('bulk-import workflow error', { error: err.message, contact_id: id })
+          })
+          if (batchDelayMs > 0) await new Promise(r => setTimeout(r, batchDelayMs))
+        }
+      }
+    }
+
+    res.json({
+      dry_run,
+      source,
+      stages_processed: stages,
+      filter: { last_contacted_empty: lastContactedEmpty, min_days: minDays, max_days: maxDays },
+      daily_limit: dailyLimit ?? null,
+      stats: {
+        total_fetched: totalFetched,
+        triggered:     triggered.length,
+        skipped:       skipped.length,
+      },
+      triggered,
+      skipped,
+    })
+  } catch (err: any) {
+    const detail = err.response?.data || err.message
+    logger.error('bulk-import error', { error: err.message, detail })
+    res.status(500).json({ error: err.message, detail })
+  }
+})
+
 // Reset a contact's loop counter manually
 app.post('/admin/contacts/:id/reset-loop', requireAdminSecret, async (req, res) => {
   const { db } = await import('./db/client')
