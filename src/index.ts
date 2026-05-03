@@ -10,7 +10,7 @@ import { logger } from './utils/logger'
 import crypto from 'crypto'
 import { buildInboxHtml } from './inbox/ui'
 import { createInboxUser, getInboxUserFromRequest, listInboxUsers, loginInboxUser, logoutInboxUser, requireInboxAuth, setInboxUserActive } from './inbox/auth'
-import { getConversationDetail, listConversations } from './inbox/queries'
+import { getConversationCounts, getConversationDetail, listConversations } from './inbox/queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
 
@@ -63,7 +63,10 @@ app.get('/inbox/api/me', async (req, res) => {
 app.get('/inbox/api/conversations', requireInboxAuth, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q : ''
   const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all'
-  res.json({ conversations: await listConversations(q, filter) })
+  res.json({
+    conversations: await listConversations(q, filter),
+    counts: await getConversationCounts(q),
+  })
 })
 
 app.get('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res) => {

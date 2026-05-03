@@ -542,9 +542,10 @@ export function buildInboxHtml(): string {
           <input id="search-input" type="search" placeholder="Search name, phone, client" />
           <button id="refresh-btn" class="ghost">Refresh</button>
           <div class="filter-row">
-            <button class="filter-chip active" data-filter="all">All inbox</button>
-            <button class="filter-chip" data-filter="unread">Unread</button>
-            <button class="filter-chip" data-filter="read">Read</button>
+            <button class="filter-chip active" data-filter="all" data-label="All inbox">All inbox</button>
+            <button class="filter-chip" data-filter="unread" data-label="Unread">Unread</button>
+            <button class="filter-chip" data-filter="read" data-label="Read">Read</button>
+            <button class="filter-chip" data-filter="not_sent" data-label="Not sent yet">Not sent yet</button>
           </div>
         </div>
         <div id="conversation-list" class="list"></div>
@@ -565,6 +566,7 @@ export function buildInboxHtml(): string {
     const state = {
       user: null,
       conversations: [],
+      counts: { all_count: 0, unread_count: 0, read_count: 0, not_sent_count: 0 },
       activeContactId: null,
       activeDetail: null,
       eventSource: null,
@@ -624,6 +626,17 @@ export function buildInboxHtml(): string {
       const root = document.getElementById('conversation-list')
       Array.from(document.querySelectorAll('.filter-chip')).forEach(function (node) {
         node.classList.toggle('active', node.getAttribute('data-filter') === state.filter)
+      })
+      const countLabels = {
+        all: state.counts.all_count || 0,
+        unread: state.counts.unread_count || 0,
+        read: state.counts.read_count || 0,
+        not_sent: state.counts.not_sent_count || 0
+      }
+      Array.from(document.querySelectorAll('.filter-chip')).forEach(function (node) {
+        const filter = node.getAttribute('data-filter') || 'all'
+        const baseLabel = node.getAttribute('data-label') || node.textContent || ''
+        node.textContent = baseLabel + ' (' + (countLabels[filter] || 0) + ')'
       })
       if (!state.conversations.length) {
         root.innerHTML = '<div class="thread-empty" style="padding:18px;">No conversations found.</div>'
@@ -928,6 +941,7 @@ export function buildInboxHtml(): string {
       const q = params.toString() ? ('?' + params.toString()) : ''
       const data = await api('/inbox/api/conversations' + q)
       state.conversations = data.conversations || []
+      state.counts = data.counts || state.counts
       renderConversationList()
       if (!state.activeContactId && state.conversations.length) {
         openConversation(state.conversations[0].contact_id)

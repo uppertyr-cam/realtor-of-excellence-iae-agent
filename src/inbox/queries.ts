@@ -2,10 +2,10 @@ import { db } from '../db/client'
 import { getClientConfig } from '../config/client-config'
 import { getAssignedToFromCrm } from '../crm/adapter'
 
-type ConversationFilter = 'all' | 'unread' | 'read'
+type ConversationFilter = 'all' | 'unread' | 'read' | 'not_sent'
 
 function normalizeFilter(filter?: string): ConversationFilter {
-  if (filter === 'unread' || filter === 'read') return filter
+  if (filter === 'unread' || filter === 'read' || filter === 'not_sent') return filter
   return 'all'
 }
 
@@ -89,6 +89,12 @@ export async function listConversations(search = '', filter?: string) {
        $2 = 'all'
        OR ($2 = 'unread' AND 'awaiting_agent_answer' = ANY(c.tags))
        OR ($2 = 'read' AND 'awaiting_faq_approval' = ANY(c.tags))
+       OR ($2 = 'not_sent' AND NOT EXISTS (
+         SELECT 1
+         FROM message_log ml_out
+         WHERE ml_out.contact_id = c.id
+           AND ml_out.direction = 'outbound'
+       ))
      )
      ORDER BY COALESCE(last_msg.created_at, c.updated_at) DESC
      LIMIT 250`,
@@ -108,6 +114,41 @@ export async function listConversations(search = '', filter?: string) {
           ? 'agent_replied'
           : null,
   }))
+}
+
+export async function getConversationCounts(search = '') {
+  const term = `%${search.trim().toLowerCase()}%`
+  const result = await db.query(
+    `SELECT
+       COUNT(*)::int AS all_count,
+       COUNT(*) FILTER (WHERE 'awaiting_agent_answer' = ANY(c.tags))::int AS unread_count,
+       COUNT(*) FILTER (WHERE 'awaiting_faq_approval' = ANY(c.tags))::int AS read_count,
+       COUNT(*) FILTER (
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM message_log ml_out
+           WHERE ml_out.contact_id = c.id
+             AND ml_out.direction = 'outbound'
+         )
+       )::int AS not_sent_count
+     FROM contacts c
+     JOIN clients cl ON cl.id = c.client_id
+     WHERE (
+       $1 = '%%'
+       OR LOWER(COALESCE(c.first_name, '')) LIKE $1
+       OR LOWER(COALESCE(c.last_name, '')) LIKE $1
+       OR LOWER(COALESCE(c.phone_number, '')) LIKE $1
+       OR LOWER(cl.name) LIKE $1
+     )`,
+    [term]
+  )
+
+  return result.rows[0] || {
+    all_count: 0,
+    unread_count: 0,
+    read_count: 0,
+    not_sent_count: 0,
+  }
 }
 
 export async function getConversationDetail(contactId: string) {
