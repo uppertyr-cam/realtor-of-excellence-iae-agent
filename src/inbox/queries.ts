@@ -50,7 +50,9 @@ export async function listConversations(search = '', filter?: string) {
        c.last_delivery_status,
        c.pending_question,
        c.pending_answer,
+       c.assigned_to,
        queue_next.message_type AS next_action_type,
+       queue_next.status AS next_action_status,
        queue_next.scheduled_at AS next_action_due,
        last_msg.content AS last_message,
        last_msg.direction AS last_direction,
@@ -67,11 +69,11 @@ export async function listConversations(search = '', filter?: string) {
        LIMIT 1
      ) last_msg ON TRUE
      LEFT JOIN LATERAL (
-       SELECT message_type, scheduled_at
+       SELECT message_type, status, scheduled_at
        FROM outbound_queue oq
        WHERE oq.contact_id = c.id
-         AND oq.status = 'pending'
-       ORDER BY oq.scheduled_at ASC, oq.id ASC
+         AND oq.status IN ('pending', 'paused')
+       ORDER BY CASE WHEN oq.status = 'pending' THEN 0 ELSE 1 END, oq.scheduled_at ASC, oq.id ASC
        LIMIT 1
      ) queue_next ON TRUE
      WHERE (
@@ -96,6 +98,7 @@ export async function listConversations(search = '', filter?: string) {
     needs_attention: row.last_direction === 'inbound',
     workflow_status: getOutcomeLabel(row.tags || []),
     next_action_label: getNextActionLabel(row.next_action_type || null),
+    automation_state: row.next_action_status === 'paused' ? 'paused' : row.next_action_status === 'pending' ? 'active' : 'idle',
     agent_question_status:
       Array.isArray(row.tags) && row.tags.includes('awaiting_agent_answer')
         ? 'awaiting_agent_reply'
@@ -122,19 +125,43 @@ export async function getConversationDetail(contactId: string) {
        c.last_read_at,
        c.pending_question,
        c.pending_answer,
+       c.assigned_to,
        queue_next.message_type AS next_action_type,
+       queue_next.status AS next_action_status,
        queue_next.scheduled_at AS next_action_due,
+       pending_ai.id AS pending_ai_response_id,
+       pending_ai.response_text AS pending_ai_response_text,
+       pending_ai.created_at AS pending_ai_created_at,
+       queue_state.pending_count,
+       queue_state.paused_count,
        c.updated_at
      FROM contacts c
      JOIN clients cl ON cl.id = c.client_id
      LEFT JOIN LATERAL (
-       SELECT message_type, scheduled_at
+       SELECT message_type, status, scheduled_at
        FROM outbound_queue oq
        WHERE oq.contact_id = c.id
-         AND oq.status = 'pending'
-       ORDER BY oq.scheduled_at ASC, oq.id ASC
+         AND oq.status IN ('pending', 'paused')
+       ORDER BY CASE WHEN oq.status = 'pending' THEN 0 ELSE 1 END, oq.scheduled_at ASC, oq.id ASC
        LIMIT 1
      ) queue_next ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT id, response_text, created_at
+       FROM ai_responses ar
+       WHERE ar.contact_id = c.id
+         AND ar.status = 'pending'
+       ORDER BY ar.created_at DESC, ar.id DESC
+       LIMIT 1
+     ) pending_ai ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT
+         COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+         COUNT(*) FILTER (WHERE status = 'paused') AS paused_count
+       FROM outbound_queue oq
+       WHERE oq.contact_id = c.id
+         AND oq.status IN ('pending', 'paused')
+         AND oq.message_type IN ('followup1','followup2','followup3','bump','bump_close','reach_back_out')
+     ) queue_state ON TRUE
      WHERE c.id=$1`,
     [contactId]
   )
@@ -154,6 +181,15 @@ export async function getConversationDetail(contactId: string) {
       ...contactRes.rows[0],
       workflow_status: getOutcomeLabel(contactRes.rows[0].tags || []),
       next_action_label: getNextActionLabel(contactRes.rows[0].next_action_type || null),
+      automation_state:
+        Number(contactRes.rows[0].paused_count || 0) > 0
+          ? 'paused'
+          : Number(contactRes.rows[0].pending_count || 0) > 0
+            ? 'active'
+            : 'idle',
+      pending_ai_response_id: contactRes.rows[0].pending_ai_response_id || null,
+      pending_ai_response_text: contactRes.rows[0].pending_ai_response_text || null,
+      pending_ai_created_at: contactRes.rows[0].pending_ai_created_at || null,
       is_stuck: !!contactRes.rows[0].next_action_due && new Date(contactRes.rows[0].next_action_due).getTime() < Date.now(),
     },
     messages: messageRes.rows,

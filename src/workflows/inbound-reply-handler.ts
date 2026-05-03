@@ -80,7 +80,7 @@ async function processBufferedMessages(contactId: string, channel: string) {
     // Cancel all pending outbound automation once the lead has replied.
     await db.query(
       `UPDATE outbound_queue SET status='cancelled'
-       WHERE contact_id=$1 AND status='pending'
+       WHERE contact_id=$1 AND status IN ('pending','paused')
        AND message_type IN ('followup1','followup2','followup3','bump','bump_close','reach_back_out')`,
       [contactId]
     )

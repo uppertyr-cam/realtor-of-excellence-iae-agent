@@ -311,6 +311,80 @@ export function buildInboxHtml(): string {
       font-size: 13px;
       line-height: 1.5;
     }
+    .workflow-actions {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(216,209,196,0.9);
+      display: grid;
+      gap: 12px;
+    }
+    .workflow-actions h5 {
+      margin: 0;
+      font-size: 15px;
+      font-family: Arial, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .action-group {
+      display: grid;
+      gap: 8px;
+    }
+    .action-group textarea,
+    .action-group input[type="text"] {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      background: #fff;
+      color: var(--ink);
+    }
+    .action-group textarea {
+      min-height: 104px;
+      resize: vertical;
+    }
+    .action-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .action-row button {
+      width: auto;
+      margin-top: 0;
+      padding: 10px 14px;
+      font-size: 13px;
+      border-radius: 12px;
+    }
+    .action-row label {
+      margin: 0;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .action-row input[type="checkbox"] {
+      width: auto;
+      padding: 0;
+      margin: 0;
+    }
+    .action-note {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .action-feedback {
+      min-height: 18px;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .action-feedback.error {
+      color: var(--danger);
+    }
     .message {
       max-width: 72%;
       border-radius: 20px;
@@ -417,6 +491,7 @@ export function buildInboxHtml(): string {
       user: null,
       conversations: [],
       activeContactId: null,
+      activeDetail: null,
       eventSource: null,
       search: '',
       filter: 'all',
@@ -511,6 +586,7 @@ export function buildInboxHtml(): string {
     }
 
     function renderThread(detail) {
+      state.activeDetail = detail
       const header = document.getElementById('thread-header')
       const body = document.getElementById('thread-body')
       const tags = (detail.contact.tags || []).join(', ')
@@ -522,11 +598,6 @@ export function buildInboxHtml(): string {
       header.innerHTML =
         '<h3>' + escapeHtml(detail.contact.contact_name) + '</h3>' +
         '<div class="thread-meta">Conversation timeline</div>'
-
-      if (!detail.messages.length) {
-        body.innerHTML = '<div class="thread-empty">No messages recorded yet.</div>'
-        return
-      }
 
       const messagesHtml = detail.messages.map(function (message) {
         return '<div class="message ' + escapeHtml(message.direction) + '">' +
@@ -540,6 +611,18 @@ export function buildInboxHtml(): string {
         '</div>'
       }).join('')
 
+      const automationPaused = detail.contact.automation_state === 'paused'
+      const pendingAiReply = detail.contact.pending_ai_response_text
+        ? '<div class="action-group">' +
+            '<h5>Pending AI reply</h5>' +
+            '<textarea id="pending-ai-input" placeholder="Edit AI reply before sending...">' + escapeHtml(detail.contact.pending_ai_response_text) + '</textarea>' +
+            '<div class="action-row">' +
+              '<button id="approve-ai-btn" type="button">Approve and Send</button>' +
+            '</div>' +
+            '<div class="action-note">This sends the latest pending AI draft after applying any edits above.</div>' +
+          '</div>'
+        : ''
+
       const workflowHtml =
         '<aside class="workflow-panel">' +
           '<h4>Workflow</h4>' +
@@ -549,6 +632,8 @@ export function buildInboxHtml(): string {
           '<div class="workflow-row"><span class="workflow-label">Tags</span><div class="workflow-value">' + escapeHtml(tags || 'None') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Current workflow</span><div class="workflow-value">' + escapeHtml(detail.contact.workflow_status || detail.contact.workflow_stage || 'unknown') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Current stage</span><div class="workflow-value">' + escapeHtml(detail.contact.workflow_stage || 'unknown') + '</div></div>' +
+          '<div class="workflow-row"><span class="workflow-label">Assigned to</span><div class="workflow-value">' + escapeHtml(detail.contact.assigned_to || 'Unassigned') + '</div></div>' +
+          '<div class="workflow-row"><span class="workflow-label">Automation</span><div class="workflow-value">' + escapeHtml(detail.contact.automation_state || 'idle') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Next execution</span><div class="workflow-value">' + escapeHtml(detail.contact.next_action_label || 'No pending execution') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Next due</span><div class="workflow-value">' + escapeHtml(formatDate(detail.contact.next_action_due) || '—') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Delivery</span><div class="workflow-value">' + escapeHtml(detail.contact.last_delivery_status || 'n/a') + '</div></div>' +
@@ -556,12 +641,169 @@ export function buildInboxHtml(): string {
           (detail.contact.pending_question ? '<div class="workflow-row"><span class="workflow-label">Pending question</span><div class="workflow-value">' + escapeHtml(detail.contact.pending_question) + '</div></div>' : '') +
           (detail.contact.pending_answer ? '<div class="workflow-row"><span class="workflow-label">Pending answer</span><div class="workflow-value">' + escapeHtml(detail.contact.pending_answer) + '</div></div>' : '') +
           (detail.contact.is_stuck ? '<div class="workflow-alert">This contact has a pending workflow step that is already overdue.</div>' : '') +
+          '<div class="workflow-actions">' +
+            '<div class="action-group">' +
+              '<h5>Assignment</h5>' +
+              '<input id="assigned-to-input" type="text" value="' + escapeHtml(detail.contact.assigned_to || '') + '" placeholder="Assign to team member" />' +
+              '<div class="action-row">' +
+                '<button id="save-assignment-btn" type="button" class="ghost">Save Assignment</button>' +
+                '<button id="clear-assignment-btn" type="button" class="ghost">Clear</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="action-group">' +
+              '<h5>Manual reply</h5>' +
+              '<textarea id="manual-reply-input" placeholder="Write a reply to this lead..."></textarea>' +
+              '<div class="action-row">' +
+                '<button id="send-reply-btn" type="button">Send Reply</button>' +
+                '<label><input id="pause-after-send" type="checkbox" /> Pause automation after send</label>' +
+              '</div>' +
+            '</div>' +
+            pendingAiReply +
+            '<div class="action-group">' +
+              '<h5>Workflow</h5>' +
+              '<div class="action-row">' +
+                '<button id="toggle-automation-btn" type="button" class="ghost">' + (automationPaused ? 'Resume Automation' : 'Pause Automation') + '</button>' +
+                '<button id="resolve-conversation-btn" type="button" class="ghost">Mark Resolved</button>' +
+              '</div>' +
+            '</div>' +
+            '<div id="action-feedback" class="action-feedback"></div>' +
+          '</div>' +
         '</aside>'
 
-      body.innerHTML = '<div id="messages-column" class="messages-column"><div class="messages-stack">' + messagesHtml + '</div></div>' + workflowHtml
+      body.innerHTML = '<div id="messages-column" class="messages-column"><div class="messages-stack">' + (messagesHtml || '<div class="thread-empty">No messages recorded yet.</div>') + '</div></div>' + workflowHtml
       const messagesNode = document.getElementById('messages-column')
       messagesNode.scrollTop = messagesNode.scrollHeight
       bindThreadScrollProxy()
+      bindThreadActions(detail)
+    }
+
+    function setActionFeedback(message, isError) {
+      const node = document.getElementById('action-feedback')
+      if (!node) return
+      node.textContent = message || ''
+      node.classList.toggle('error', Boolean(isError))
+    }
+
+    async function refreshActiveConversation() {
+      await loadConversations()
+      if (state.activeContactId) {
+        await openConversation(state.activeContactId)
+      }
+    }
+
+    function bindThreadActions(detail) {
+      const replyBtn = document.getElementById('send-reply-btn')
+      if (replyBtn) {
+        replyBtn.addEventListener('click', async function () {
+          const input = document.getElementById('manual-reply-input')
+          const pauseCheckbox = document.getElementById('pause-after-send')
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/reply', {
+              method: 'POST',
+              body: JSON.stringify({
+                message: input.value,
+                pauseAutomationAfterSend: Boolean(pauseCheckbox && pauseCheckbox.checked)
+              })
+            })
+            input.value = ''
+            if (pauseCheckbox) pauseCheckbox.checked = false
+            setActionFeedback('Manual reply sent.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
+
+      const approveBtn = document.getElementById('approve-ai-btn')
+      if (approveBtn) {
+        approveBtn.addEventListener('click', async function () {
+          const input = document.getElementById('pending-ai-input')
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/approve-ai', {
+              method: 'POST',
+              body: JSON.stringify({ message: input.value })
+            })
+            setActionFeedback('AI reply approved and sent.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
+
+      const resolveBtn = document.getElementById('resolve-conversation-btn')
+      if (resolveBtn) {
+        resolveBtn.addEventListener('click', async function () {
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/resolve', {
+              method: 'POST',
+              body: JSON.stringify({})
+            })
+            setActionFeedback('Conversation marked resolved.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
+
+      const toggleAutomationBtn = document.getElementById('toggle-automation-btn')
+      if (toggleAutomationBtn) {
+        toggleAutomationBtn.addEventListener('click', async function () {
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/automation', {
+              method: 'POST',
+              body: JSON.stringify({ paused: detail.contact.automation_state !== 'paused' })
+            })
+            setActionFeedback(detail.contact.automation_state === 'paused' ? 'Automation resumed.' : 'Automation paused.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
+
+      const saveAssignmentBtn = document.getElementById('save-assignment-btn')
+      if (saveAssignmentBtn) {
+        saveAssignmentBtn.addEventListener('click', async function () {
+          const input = document.getElementById('assigned-to-input')
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/assign', {
+              method: 'POST',
+              body: JSON.stringify({ assignedTo: input.value })
+            })
+            setActionFeedback('Assignment updated.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
+
+      const clearAssignmentBtn = document.getElementById('clear-assignment-btn')
+      if (clearAssignmentBtn) {
+        clearAssignmentBtn.addEventListener('click', async function () {
+          const input = document.getElementById('assigned-to-input')
+          setActionFeedback('')
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/assign', {
+              method: 'POST',
+              body: JSON.stringify({ assignedTo: '' })
+            })
+            if (input) input.value = ''
+            setActionFeedback('Assignment cleared.')
+            await refreshActiveConversation()
+          } catch (err) {
+            setActionFeedback(err.message, true)
+          }
+        })
+      }
     }
 
     function bindThreadScrollProxy() {
