@@ -746,7 +746,9 @@ export function buildInboxHtml(): string {
         node.classList.remove('active')
       })
       if (!state.emails.length) {
+        state.activeEmailId = null
         root.innerHTML = '<div class="thread-empty" style="padding:18px;">No project emails found.</div>'
+        renderEmailEmpty()
         return
       }
       root.innerHTML = state.emails.map(function (item) {
@@ -894,6 +896,15 @@ export function buildInboxHtml(): string {
       if (frame) frame.srcdoc = detail.html_body || '<div style="font-family:Arial,sans-serif;padding:20px;">No stored email body.</div>'
     }
 
+    function renderEmailEmpty() {
+      const header = document.getElementById('thread-header')
+      const body = document.getElementById('thread-body')
+      header.innerHTML =
+        '<h3>Email Inbox</h3>' +
+        '<div class="thread-meta">Project emails sent by the system</div>'
+      body.innerHTML = '<div class="thread-empty">No project emails have been logged yet.</div>'
+    }
+
     function updateViewButtons() {
       const convoBtn = document.getElementById('view-conversations-btn')
       const emailBtn = document.getElementById('view-emails-btn')
@@ -919,6 +930,7 @@ export function buildInboxHtml(): string {
       const params = new URLSearchParams()
       if (state.search) params.set('q', state.search)
       const q = params.toString() ? ('?' + params.toString()) : ''
+      renderEmailEmpty()
       const data = await api('/inbox/api/emails' + q)
       state.emails = data.emails || []
       renderEmailList()
@@ -939,6 +951,7 @@ export function buildInboxHtml(): string {
       updateViewButtons()
       if (view === 'emails') {
         state.activeContactId = null
+        renderEmailEmpty()
         await loadEmails()
       } else {
         state.activeEmailId = null
