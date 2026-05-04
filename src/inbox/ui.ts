@@ -1129,10 +1129,10 @@ export function buildInboxHtml(): string {
           } catch {}
 
           if (phonesData.phones && phonesData.phones.length > 0) {
-            const options = phonesData.phones.map(function (p, i) { return (i + 1) + '. ' + p }).join('\n')
+            const options = phonesData.phones.map(function (p, i) { return (i + 1) + '. ' + p }).join('\\n')
             const choice = prompt(
-              'Other numbers found for this contact:\n\n' + options +
-              '\n\nEnter a number from the list to retry with it, or leave blank to delete the contact.',
+              'Other numbers found for this contact:\\n\\n' + options +
+              '\\n\\nEnter a number from the list to retry with it, or leave blank to delete the contact.',
               ''
             )
             setActionFeedback('')
@@ -1155,8 +1155,8 @@ export function buildInboxHtml(): string {
           } else {
             setActionFeedback('')
             const action = confirm(
-              'No other numbers found in the CRM for this contact.\n\n' +
-              'OK = Mark as no valid number & notify agent\n' +
+              'No other numbers found in the CRM for this contact.\\n\\n' +
+              'OK = Mark as no valid number & notify agent\\n' +
               'Cancel = Do nothing'
             )
             if (!action) return
