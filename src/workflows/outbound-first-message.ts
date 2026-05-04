@@ -41,12 +41,22 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
 
   // ── Step 3: Duplicate check ─────────────────────────────────
   const existing = await db.query(
-    `SELECT id, workflow_stage FROM contacts WHERE id = $1`,
+    `SELECT id, workflow_stage, phone_number, tags FROM contacts WHERE id = $1`,
     [webhook.contact_id]
   )
   if (existing.rowCount! > 0) {
-    const stage = existing.rows[0].workflow_stage
-    if (stage !== 'pending' && stage !== 'closed') {
+    const row = existing.rows[0]
+    const stage = row.workflow_stage
+
+    // Non-WhatsApp gate: only allow re-entry if phone number has changed
+    if (row.tags?.includes('non_whatsapp_number')) {
+      if (row.phone_number === webhook.phone_number) {
+        logger.info('CRM webhook rejected — same non-WhatsApp number', { contact_id: webhook.contact_id })
+        return
+      }
+      logger.info('CRM webhook re-entry — new number detected, clearing non_whatsapp_number', { contact_id: webhook.contact_id })
+      // Falls through to upsert which strips the tag
+    } else if (stage !== 'pending' && stage !== 'closed') {
       logger.warn('Duplicate webhook — contact already active', {
         contact_id: webhook.contact_id, stage,
       })
@@ -71,7 +81,7 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
        email = EXCLUDED.email,
        workflow_stage = 'pending',
        assigned_to = EXCLUDED.assigned_to,
-       tags = ARRAY(SELECT DISTINCT UNNEST(contacts.tags || ARRAY['ai_database_reactivation'])),
+       tags = ARRAY(SELECT DISTINCT UNNEST(array_remove(contacts.tags, 'non_whatsapp_number') || ARRAY['ai_database_reactivation'])),
        updated_at = NOW()`,
     [
       webhook.contact_id, webhook.client_id, webhook.crm_type,

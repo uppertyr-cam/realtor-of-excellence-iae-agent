@@ -85,6 +85,7 @@ export async function listConversations(search = '', filter?: string) {
        OR LOWER(COALESCE(c.phone_number, '')) LIKE $1
        OR LOWER(cl.name) LIKE $1
      )
+     AND NOT ('non_whatsapp_number' = ANY(c.tags))
      AND (
        $2 = 'all'
        OR ($2 = 'unread' AND 'awaiting_agent_answer' = ANY(c.tags))
