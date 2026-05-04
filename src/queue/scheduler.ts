@@ -79,12 +79,24 @@ function scheduleWeeklyReport() {
     return target.getTime() - nowSast.getTime()
   }
 
-  function scheduleNext() {
+  async function scheduleNext() {
     const ms = msUntilNextMonday9am()
     logger.info(`Weekly report scheduled in ${Math.round(ms / 3600000)}h`)
     setTimeout(async () => {
       try {
-        await sendWeeklyReport()
+        // Guard: skip if already sent this Monday (handles multiple restarts on report day)
+        const { db } = await import('../db/client')
+        const already = await db.query(
+          `SELECT 1 FROM email_log
+           WHERE category='weekly_report'
+             AND created_at >= date_trunc('week', NOW() AT TIME ZONE 'Africa/Johannesburg') AT TIME ZONE 'Africa/Johannesburg'
+           LIMIT 1`
+        )
+        if ((already.rowCount ?? 0) > 0) {
+          logger.info('Weekly report already sent this week — skipping duplicate')
+        } else {
+          await sendWeeklyReport()
+        }
       } catch (err: any) {
         logger.error('Weekly report failed', { error: err.message })
         alertEmail('Weekly report failed', { error: err.message })
