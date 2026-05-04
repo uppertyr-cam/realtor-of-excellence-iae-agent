@@ -144,6 +144,7 @@ export function buildInboxHtml(): string {
       background: rgba(252,250,245,0.74);
       display: flex;
       flex-direction: column;
+      height: 100%;
       min-height: 0;
       overflow: hidden;
     }
@@ -191,7 +192,9 @@ export function buildInboxHtml(): string {
     .list {
       flex: 1;
       min-height: 0;
-      overflow-y: auto;
+      overflow-y: scroll;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       padding: 8px;
     }
     .conversation {
