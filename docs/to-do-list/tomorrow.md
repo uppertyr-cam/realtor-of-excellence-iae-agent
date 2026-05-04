@@ -62,3 +62,23 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
 ## Inbox Follow-Up
 
 - [ ] Add an out-of-window WhatsApp template send option in the inbox for conversations outside Meta's 24-hour freeform reply window
+
+---
+
+## 2FA for Inbox Login
+
+The auth.ts 2FA code exists but was removed because the DB columns don't exist yet. To implement properly:
+
+1. Add DB migration — columns needed on `inbox_users`:
+   - `two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE`
+   - `two_factor_enabled_at TIMESTAMPTZ`
+   - `two_factor_secret_enc TEXT` (AES-encrypted TOTP secret)
+   - `two_factor_temp_secret_enc TEXT` (during setup flow)
+   Columns on `inbox_sessions`:
+   - `two_factor_verified BOOLEAN NOT NULL DEFAULT FALSE`
+   Add new table: `inbox_login_challenges (id, user_id, expires_at, two_factor_verified)`
+2. Add the migration to `src/db/schema.sql` and `src/db/migrate.ts`
+3. Restore the 398-line auth.ts (it's in git history at commit `1b21ce3`)
+4. Add `/inbox/api/2fa/setup`, `/inbox/api/2fa/verify`, `/inbox/api/2fa/disable` endpoints in `index.ts`
+5. Add 2FA setup UI to inbox (`src/inbox/ui.ts`)
+- [ ] Implement when ready — requires DB migration first
