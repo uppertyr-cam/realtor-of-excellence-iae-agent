@@ -1122,6 +1122,55 @@ export function buildInboxHtml(): string {
       const deleteContactBtn = document.getElementById('delete-contact-btn')
       if (deleteContactBtn) {
         deleteContactBtn.addEventListener('click', async function () {
+          setActionFeedback('Checking for other numbers...')
+          let phonesData = { current: '', phones: [] }
+          try {
+            phonesData = await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/phones', {})
+          } catch {}
+
+          if (phonesData.phones && phonesData.phones.length > 0) {
+            const options = phonesData.phones.map(function (p, i) { return (i + 1) + '. ' + p }).join('\n')
+            const choice = prompt(
+              'Other numbers found for this contact:\n\n' + options +
+              '\n\nEnter a number from the list to retry with it, or leave blank to delete the contact.',
+              ''
+            )
+            setActionFeedback('')
+            if (choice === null) return
+            const picked = phonesData.phones.find(function (p, i) { return choice.trim() === String(i + 1) || choice.trim() === p })
+            if (picked) {
+              try {
+                await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/use-phone', {
+                  method: 'POST',
+                  body: JSON.stringify({ phone: picked })
+                })
+                setActionFeedback('Switched to ' + picked + ' — first message re-queued.')
+                await refreshActiveConversation()
+                await loadConversations()
+              } catch (err) {
+                setActionFeedback('Failed: ' + err.message, true)
+              }
+              return
+            }
+          } else {
+            setActionFeedback('')
+            const action = confirm(
+              'No other numbers found in the CRM for this contact.\n\n' +
+              'OK = Mark as no valid number & notify agent\n' +
+              'Cancel = Do nothing'
+            )
+            if (!action) return
+            try {
+              await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id) + '/mark-no-number', { method: 'POST' })
+              setActionFeedback('Marked as no valid number. Agent notified.')
+              await refreshActiveConversation()
+              await loadConversations()
+            } catch (err) {
+              setActionFeedback('Failed: ' + err.message, true)
+            }
+            return
+          }
+
           if (!confirm('Delete this contact permanently? This cannot be undone.')) return
           try {
             await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id), { method: 'DELETE' })
@@ -1131,7 +1180,7 @@ export function buildInboxHtml(): string {
             document.getElementById('thread-body').innerHTML = '<div class="thread-empty">No conversation selected.</div>'
             await loadConversations()
           } catch (err) {
-            alert('Failed to delete: ' + err.message)
+            setActionFeedback('Failed to delete: ' + err.message, true)
           }
         })
       }

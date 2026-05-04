@@ -135,6 +135,115 @@ app.post('/inbox/api/conversations/:contactId/assign', requireInboxAuth, async (
   }
 })
 
+// Fetch alternate phone numbers for a contact from FUB
+app.get('/inbox/api/conversations/:contactId/phones', requireInboxAuth, async (req, res) => {
+  try {
+    const { db } = await import('./db/client')
+    const { getClientConfig } = await import('./config/client-config')
+    const contactId = req.params.contactId
+
+    const contactRes = await db.query(
+      `SELECT phone_number, client_id FROM contacts WHERE id=$1`, [contactId]
+    )
+    if (contactRes.rowCount === 0) return res.status(404).json({ error: 'Contact not found' })
+
+    const { phone_number, client_id } = contactRes.rows[0]
+    const config = await getClientConfig(client_id)
+    if (!config.crm_api_key) return res.json({ phones: [] })
+
+    const fubBase = config.crm_base_url || 'https://api.followupboss.com/v1'
+    const fubRes = await axios.get(`${fubBase}/people/${contactId}`, {
+      auth: { username: config.crm_api_key, password: '' },
+      timeout: 10_000,
+    })
+
+    const phones: string[] = ((fubRes.data?.phones || []) as Array<{ value?: string }>)
+      .map((p) => p.value?.trim())
+      .filter((p): p is string => !!p && p !== phone_number)
+
+    res.json({ current: phone_number, phones: [...new Set(phones)] })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// Swap to a different phone number and re-queue the first message
+app.post('/inbox/api/conversations/:contactId/use-phone', requireInboxAuth, async (req, res) => {
+  try {
+    const { db } = await import('./db/client')
+    const contactId = req.params.contactId
+    const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : ''
+    if (!phone) return res.status(400).json({ error: 'phone required' })
+
+    const contactRes = await db.query(`SELECT client_id FROM contacts WHERE id=$1`, [contactId])
+    if (contactRes.rowCount === 0) return res.status(404).json({ error: 'Contact not found' })
+    const { client_id } = contactRes.rows[0]
+
+    await db.query(`UPDATE contacts SET phone_number=$1, updated_at=NOW() WHERE id=$2`, [phone, contactId])
+    // Clear any failed/pending first_message entries and re-queue fresh
+    await db.query(
+      `DELETE FROM outbound_queue WHERE contact_id=$1 AND message_type='first_message'`, [contactId]
+    )
+    await db.query(
+      `INSERT INTO outbound_queue (client_id, contact_id, message_type, status, scheduled_at)
+       VALUES ($1, $2, 'first_message', 'pending', NOW())`,
+      [client_id, contactId]
+    )
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// Mark contact as non-WhatsApp number and notify the agent
+app.post('/inbox/api/conversations/:contactId/mark-no-number', requireInboxAuth, async (req, res) => {
+  try {
+    const { db } = await import('./db/client')
+    const { getClientConfig } = await import('./config/client-config')
+    const contactId = req.params.contactId
+
+    const contactRes = await db.query(
+      `SELECT c.id, c.client_id, c.phone_number,
+              COALESCE(NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.phone_number) AS contact_name
+       FROM contacts c WHERE c.id=$1`, [contactId]
+    )
+    if (contactRes.rowCount === 0) return res.status(404).json({ error: 'Contact not found' })
+    const contact = contactRes.rows[0]
+    const config = await getClientConfig(contact.client_id)
+
+    // Tag the contact and clear pending first_message queue
+    await db.query(
+      `UPDATE contacts
+       SET tags = ARRAY(SELECT DISTINCT UNNEST(tags || ARRAY['non_whatsapp_number'])),
+           updated_at = NOW()
+       WHERE id=$1`,
+      [contactId]
+    )
+    await db.query(
+      `DELETE FROM outbound_queue WHERE contact_id=$1 AND message_type='first_message'`, [contactId]
+    )
+
+    // Notify the responsible agent
+    if (config.notification_target) {
+      const { sendWhatsAppMessage } = await import('./channels/whatsapp')
+      const { sendSmsMessage } = await import('./channels/sms')
+      const channel = config.notification_channel || 'whatsapp'
+      const msg = `No valid number for contact ${contact.contact_name} (${contact.phone_number}). Please update their number in the CRM.`
+      try {
+        if (channel === 'whatsapp') {
+          await sendWhatsAppMessage(config.notification_target, msg, config.wa_phone_number_id!, config.wa_access_token!)
+        } else if (channel === 'sms') {
+          await sendSmsMessage(config.notification_target, msg, config.sms_account_sid!, config.sms_auth_token!, config.sms_from_number!)
+        }
+      } catch {}
+    }
+
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
 app.delete('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res) => {
   try {
     const { db } = await import('./db/client')
