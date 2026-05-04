@@ -14,7 +14,7 @@ import { getConversationCounts, getConversationDetail, listConversations } from 
 import { listEmailInbox } from './inbox/email-queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
-import { alertEmail } from './utils/alert'
+import { alertEmail, noNumberEmail } from './utils/alert'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -224,13 +224,8 @@ app.post('/inbox/api/conversations/:contactId/mark-no-number', requireInboxAuth,
       `DELETE FROM outbound_queue WHERE contact_id=$1 AND message_type='first_message'`, [contactId]
     )
 
-    // Email alert for no valid number
-    alertEmail('No valid number — contact needs CRM update', {
-      contact_name: contact.contact_name,
-      phone_number: contact.phone_number,
-      contact_id: contactId,
-      client_id: contact.client_id,
-    })
+    // Notify Charmaine with styled email
+    noNumberEmail({ name: contact.contact_name, phone: contact.phone_number, id: contactId })
 
     res.json({ success: true })
   } catch (err: any) {

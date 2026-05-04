@@ -14,7 +14,7 @@ import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../channels/whatsapp'
 import { sendSmsMessage } from '../channels/sms'
 import { isWithinWorkingHours } from '../utils/working-hours'
 import { logger } from '../utils/logger'
-import { alertEmail } from '../utils/alert'
+import { alertEmail, noNumberEmail } from '../utils/alert'
 import { updateDashboard } from '../reports/dashboard'
 import { updateMetrics } from '../reports/weekly-report'
 import { getWhatsAppMarketingTemplateCostUsd } from '../config/pricing'
@@ -354,14 +354,9 @@ async function sendFirstMessage(job: any, config: any) {
       contact.crm_callback_url
     )
 
-    // Email alert for contacts with no valid number
+    // Notify Charmaine with styled email
     const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.phone_number
-    alertEmail('No valid number — contact needs CRM update', {
-      contact_name: contactName,
-      phone_number: contact.phone_number,
-      contact_id: contact.id,
-      client_id: contact.client_id,
-    })
+    noNumberEmail({ name: contactName, phone: contact.phone_number, id: contact.id })
     return
   }
 
