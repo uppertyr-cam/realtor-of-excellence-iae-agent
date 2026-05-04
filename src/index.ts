@@ -135,6 +135,20 @@ app.post('/inbox/api/conversations/:contactId/assign', requireInboxAuth, async (
   }
 })
 
+app.delete('/inbox/api/conversations/:contactId', requireInboxAuth, async (req, res) => {
+  try {
+    const { db } = await import('./db/client')
+    const contactId = req.params.contactId
+    await db.query(`DELETE FROM outbound_queue WHERE contact_id=$1`, [contactId])
+    await db.query(`DELETE FROM ai_responses WHERE contact_id=$1`, [contactId])
+    await db.query(`DELETE FROM message_log WHERE contact_id=$1`, [contactId])
+    await db.query(`DELETE FROM contacts WHERE id=$1`, [contactId])
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
 app.get('/inbox/api/events', requireInboxAuth, (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',

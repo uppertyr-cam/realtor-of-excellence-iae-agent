@@ -891,6 +891,10 @@ export function buildInboxHtml(): string {
                 '<button id="resolve-conversation-btn" type="button" class="ghost">Mark Resolved</button>' +
               '</div>' +
             '</div>' +
+            '<div class="action-group">' +
+              '<h5>Danger zone</h5>' +
+              '<button id="delete-contact-btn" type="button" class="ghost" style="border-color:#9f1239;color:#9f1239;">Delete Contact</button>' +
+            '</div>' +
           '</div>' +
         '</aside>'
 
@@ -1114,6 +1118,23 @@ export function buildInboxHtml(): string {
           }
         })
       }
+
+      const deleteContactBtn = document.getElementById('delete-contact-btn')
+      if (deleteContactBtn) {
+        deleteContactBtn.addEventListener('click', async function () {
+          if (!confirm('Delete this contact permanently? This cannot be undone.')) return
+          try {
+            await api('/inbox/api/conversations/' + encodeURIComponent(detail.contact.contact_id), { method: 'DELETE' })
+            state.activeContactId = null
+            state.activeDetail = null
+            document.getElementById('thread-header').innerHTML = '<div class="thread-empty">Select a conversation to view the message timeline.</div>'
+            document.getElementById('thread-body').innerHTML = '<div class="thread-empty">No conversation selected.</div>'
+            await loadConversations()
+          } catch (err) {
+            alert('Failed to delete: ' + err.message)
+          }
+        })
+      }
     }
 
     function bindThreadScrollProxy() {
@@ -1128,12 +1149,7 @@ export function buildInboxHtml(): string {
 
         const target = event.target
         if (target && target.closest) {
-          if (target.closest('#conversation-list')) {
-            messagesNode.scrollTop += event.deltaY
-            event.preventDefault()
-            return
-          }
-          if (target.closest('.workflow-panel')) {
+          if (target.closest('#conversation-list') || target.closest('.workflow-panel')) {
             return
           }
           if (target.closest('#thread-header') || target.closest('.thread-body')) {
