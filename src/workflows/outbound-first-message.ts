@@ -353,6 +353,14 @@ async function sendFirstMessage(job: any, config: any) {
       config,
       contact.crm_callback_url
     )
+
+    // Notify agent that this contact has no valid number
+    if (config.notification_target) {
+      const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.phone_number
+      const msg = `No valid number for contact ${contactName} (${contact.phone_number}). Please update their number in the CRM.`
+      sendWhatsAppMessage(config.notification_target, msg, config.wa_phone_number_id!, config.wa_access_token!)
+        .catch(() => {})
+    }
     return
   }
 
