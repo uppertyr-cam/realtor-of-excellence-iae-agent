@@ -42,7 +42,7 @@ app.get('/inbox', (_req, res) => {
 
 app.post('/inbox/api/login', async (req, res) => {
   try {
-    const user = await loginInboxUser(String(req.body?.email || ''), String(req.body?.password || ''), res)
+    const user = await loginInboxUser(req, String(req.body?.email || ''), String(req.body?.password || ''), res)
     if (!user) return res.status(401).json({ error: 'Invalid credentials' })
     res.json({ user })
   } catch (err: any) {
@@ -746,8 +746,17 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
         }
 
         const id    = person.id?.toString()
-        const name  = `${person.firstName || ''} ${person.lastName || ''}`.trim()
         const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+
+        // Split full name if FUB put everything in firstName with empty lastName
+        let firstName: string = (person.firstName || '').trim()
+        let lastName: string  = (person.lastName  || '').trim()
+        if (firstName && !lastName && firstName.includes(' ')) {
+          const spaceIdx = firstName.indexOf(' ')
+          lastName  = firstName.slice(spaceIdx + 1).trim()
+          firstName = firstName.slice(0, spaceIdx).trim()
+        }
+        const name = `${firstName} ${lastName}`.trim()
 
         if (!phones.length) {
           skipped.push({ contact_id: id, name, reason: 'no phone number' })
@@ -764,12 +773,17 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
           continue
         }
 
+        // If we split the name, write the corrected fields back to FUB
+        if (lastName && lastName !== (person.lastName || '').trim()) {
+          axios.put(`${fubBase}/people/${id}`, { firstName, lastName }, { auth }).catch(() => {})
+        }
+
         const payload = {
           contact_id:    id,
           phone_number:  phones[0],
           phone_numbers: phones.length > 1 ? phones : undefined,
-          first_name:    person.firstName || '',
-          last_name:     person.lastName,
+          first_name:    firstName,
+          last_name:     lastName || undefined,
           email:         person.emails?.[0]?.value,
           client_id,
           assigned_to:   person.assignedTo || undefined,

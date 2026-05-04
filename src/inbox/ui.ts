@@ -135,7 +135,8 @@ export function buildInboxHtml(): string {
       display: grid;
       grid-template-columns: 360px 1fr;
       grid-template-rows: 1fr;
-      height: calc(100vh - 77px);
+      flex: 1;
+      min-height: 0;
       overflow: hidden;
     }
     .sidebar {
@@ -659,6 +660,25 @@ export function buildInboxHtml(): string {
       return date.toLocaleString()
     }
 
+    function formatCountdown(value) {
+      if (!value) return ''
+      const diff = new Date(value).getTime() - Date.now()
+      if (diff < 0) return 'overdue'
+      const mins = Math.floor(diff / 60000)
+      if (mins < 60) return mins + 'm'
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return hrs + 'h ' + (mins % 60) + 'm'
+      const days = Math.floor(hrs / 24)
+      return days + 'd ' + (hrs % 24) + 'h'
+    }
+
+    setInterval(function () {
+      document.querySelectorAll('.countdown[data-due]').forEach(function (el) {
+        el.textContent = formatCountdown(el.getAttribute('data-due'))
+        el.style.color = el.textContent === 'overdue' ? '#9f1239' : '#65706c'
+      })
+    }, 30000)
+
     async function api(url, options) {
       const response = await fetch(url, Object.assign({
         credentials: 'same-origin',
@@ -730,7 +750,12 @@ export function buildInboxHtml(): string {
           '</div>' +
           '<div class="conversation-subtitle">' + escapeHtml(item.client_name) + ' • ' + escapeHtml(item.workflow_stage || 'unknown') + '</div>' +
           '<div class="conversation-preview">' + escapeHtml(item.last_message || 'No messages yet') + '</div>' +
-          '<div class="conversation-subtitle" style="margin-top:8px;">' + escapeHtml(formatDate(item.last_message_at || item.updated_at)) + '</div>' +
+          '<div class="conversation-subtitle" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">' +
+            '<span>' + escapeHtml(formatDate(item.last_message_at || item.updated_at)) + '</span>' +
+            (item.next_action_due
+              ? '<span style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:' + (new Date(item.next_action_due).getTime() < Date.now() ? '#9f1239' : '#65706c') + ';" class="countdown" data-due="' + escapeHtml(item.next_action_due) + '">' + formatCountdown(item.next_action_due) + ' · ' + escapeHtml(item.next_action_label || '') + '</span>'
+              : '<span style="font-family:Arial,sans-serif;font-size:11px;color:#65706c;">idle</span>') +
+          '</div>' +
         '</div>'
       }).join('')
 
