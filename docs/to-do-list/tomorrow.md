@@ -56,3 +56,9 @@ Files to edit: `src/crm/normalizer.ts`, `src/crm/adapter.ts`
 
 - [ ] Verify bump scheduling and reach-back-out scheduling end-to-end
 - [ ] Check database state throughout a full multi-day drip sequence
+
+---
+
+## Inbox Follow-Up
+
+- [ ] Add an out-of-window WhatsApp template send option in the inbox for conversations outside Meta's 24-hour freeform reply window
