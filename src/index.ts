@@ -42,7 +42,7 @@ app.get('/inbox', (_req, res) => {
 
 app.post('/inbox/api/login', async (req, res) => {
   try {
-    const user = await loginInboxUser(String(req.body?.email || ''), String(req.body?.password || ''), res)
+    const user = await loginInboxUser(req, String(req.body?.email || ''), String(req.body?.password || ''), res)
     if (!user) return res.status(401).json({ error: 'Invalid credentials' })
     res.json({ user })
   } catch (err: any) {
