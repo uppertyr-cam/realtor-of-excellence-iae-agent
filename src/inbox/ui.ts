@@ -190,8 +190,6 @@ export function buildInboxHtml(): string {
       color: #fff;
     }
     .list {
-      flex: 1;
-      min-height: 0;
       overflow-y: scroll;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
@@ -632,6 +630,15 @@ export function buildInboxHtml(): string {
   </div>
 
   <script>
+    function sizeSidebarList() {
+      const sidebar = document.querySelector('.sidebar')
+      const tools = document.querySelector('.sidebar-tools')
+      const list = document.getElementById('conversation-list')
+      if (!sidebar || !tools || !list) return
+      list.style.height = (sidebar.clientHeight - tools.clientHeight) + 'px'
+    }
+    window.addEventListener('resize', sizeSidebarList)
+
     const state = {
       user: null,
       view: 'conversations',
@@ -711,6 +718,7 @@ export function buildInboxHtml(): string {
       document.getElementById('me').textContent = state.user
         ? (state.user.display_name || state.user.email)
         : ''
+      requestAnimationFrame(sizeSidebarList)
     }
 
     function renderConversationList() {
