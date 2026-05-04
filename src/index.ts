@@ -14,6 +14,7 @@ import { getConversationCounts, getConversationDetail, listConversations } from 
 import { listEmailInbox } from './inbox/email-queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
+import { alertEmail } from './utils/alert'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -223,20 +224,13 @@ app.post('/inbox/api/conversations/:contactId/mark-no-number', requireInboxAuth,
       `DELETE FROM outbound_queue WHERE contact_id=$1 AND message_type='first_message'`, [contactId]
     )
 
-    // Notify the responsible agent
-    if (config.notification_target) {
-      const { sendWhatsAppMessage } = await import('./channels/whatsapp')
-      const { sendSmsMessage } = await import('./channels/sms')
-      const channel = config.notification_channel || 'whatsapp'
-      const msg = `No valid number for contact ${contact.contact_name} (${contact.phone_number}). Please update their number in the CRM.`
-      try {
-        if (channel === 'whatsapp') {
-          await sendWhatsAppMessage(config.notification_target, msg, config.wa_phone_number_id!, config.wa_access_token!)
-        } else if (channel === 'sms') {
-          await sendSmsMessage(config.notification_target, msg, config.sms_account_sid!, config.sms_auth_token!, config.sms_from_number!)
-        }
-      } catch {}
-    }
+    // Email alert for no valid number
+    alertEmail('No valid number — contact needs CRM update', {
+      contact_name: contact.contact_name,
+      phone_number: contact.phone_number,
+      contact_id: contactId,
+      client_id: contact.client_id,
+    })
 
     res.json({ success: true })
   } catch (err: any) {
