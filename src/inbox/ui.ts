@@ -134,6 +134,7 @@ export function buildInboxHtml(): string {
     .layout {
       display: grid;
       grid-template-columns: 360px 1fr;
+      grid-template-rows: 1fr;
       height: calc(100vh - 77px);
       overflow: hidden;
     }
