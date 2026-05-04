@@ -753,7 +753,9 @@ export function buildInboxHtml(): string {
           '<div class="conversation-subtitle" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">' +
             '<span>' + escapeHtml(formatDate(item.last_message_at || item.updated_at)) + '</span>' +
             (item.next_action_due
-              ? '<span style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:' + (new Date(item.next_action_due).getTime() < Date.now() ? '#9f1239' : '#65706c') + ';" class="countdown" data-due="' + escapeHtml(item.next_action_due) + '">' + formatCountdown(item.next_action_due) + ' · ' + escapeHtml(item.next_action_label || '') + '</span>'
+              ? (item.next_action_type === 'first_message'
+                ? '<span style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#65706c;">Queued · First message</span>'
+                : '<span style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:' + (new Date(item.next_action_due).getTime() < Date.now() ? '#9f1239' : '#65706c') + ';" class="countdown" data-due="' + escapeHtml(item.next_action_due) + '">' + formatCountdown(item.next_action_due) + ' · ' + escapeHtml(item.next_action_label || '') + '</span>')
               : '<span style="font-family:Arial,sans-serif;font-size:11px;color:#65706c;">idle</span>') +
           '</div>' +
         '</div>'

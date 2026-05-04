@@ -213,9 +213,10 @@ async function sendFirstMessage(job: any, config: any) {
   if (contactRes.rowCount === 0) return
   const contact: Contact = contactRes.rows[0]
 
-  // Build personalised message
+  // Build personalised message — use only the first word of first_name
+  const firstName = (contact.first_name || '').split(' ')[0]
   const message = config.first_message_template
-    .replace(/{{first_name}}/g, contact.first_name || '')
+    .replace(/{{first_name}}/g, firstName)
     .replace(/{{last_name}}/g, contact.last_name || '')
     .replace(/{{phone_number}}/g, contact.phone_number)
 
