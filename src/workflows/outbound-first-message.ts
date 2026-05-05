@@ -398,9 +398,9 @@ async function sendFirstMessage(job: any, config: any) {
 
   // Log to message_log
   await db.query(
-    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type)
-     VALUES ($1,$2,'outbound',$3,$4,'first_message')`,
-    [contact.id, config.id, deliveryChannel, message]
+    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type, wa_message_id)
+     VALUES ($1,$2,'outbound',$3,$4,'first_message',$5)`,
+    [contact.id, config.id, deliveryChannel, message, result.message_id || null]
   )
   publishInboxEvent({
     type: 'message_created',

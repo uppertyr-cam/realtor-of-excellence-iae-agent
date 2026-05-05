@@ -236,7 +236,7 @@ export async function getConversationDetail(contactId: string) {
   } catch {}
 
   const messageRes = await db.query(
-    `SELECT id, direction, channel, content, message_type, created_at
+    `SELECT id, direction, channel, content, message_type, created_at, delivery_status
      FROM message_log
      WHERE contact_id=$1
      ORDER BY created_at ASC, id ASC`,

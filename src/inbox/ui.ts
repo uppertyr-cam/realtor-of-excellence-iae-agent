@@ -899,7 +899,15 @@ export function buildInboxHtml(): string {
         })
       }
 
+      const tickSvg = {
+        sent:      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="11" viewBox="0 0 16 11" fill="none" style="display:inline;vertical-align:middle;opacity:0.7;"><path d="M1 5.5L5 9.5L15 1" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        delivered: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="11" viewBox="0 0 20 11" fill="none" style="display:inline;vertical-align:middle;opacity:0.7;"><path d="M1 5.5L5 9.5L15 1" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L20 1" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        read:      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="11" viewBox="0 0 20 11" fill="none" style="display:inline;vertical-align:middle;"><path d="M1 5.5L5 9.5L15 1" stroke="#a8d8f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L20 1" stroke="#a8d8f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        failed:    '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" style="display:inline;vertical-align:middle;"><circle cx="6" cy="6" r="5" stroke="rgba(255,180,180,0.9)" stroke-width="1.5"/><path d="M6 3.5V6.5" stroke="rgba(255,180,180,0.9)" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="8.5" r="0.75" fill="rgba(255,180,180,0.9)"/></svg>'
+      }
       const messagesHtml = detail.messages.map(function (message) {
+        const isOutboundWa = message.direction === 'outbound' && message.channel === 'whatsapp'
+        const tick = isOutboundWa ? (tickSvg[message.delivery_status] || tickSvg.sent) : ''
         return '<div class="message ' + escapeHtml(message.direction) + '">' +
           '<div class="message-meta">' +
             escapeHtml(message.direction) + ' • ' +
@@ -908,6 +916,7 @@ export function buildInboxHtml(): string {
             ' • ' + escapeHtml(formatDate(message.created_at)) +
           '</div>' +
           '<div class="message-body">' + escapeHtml(message.content) + '</div>' +
+          (tick ? '<div style="text-align:right;margin-top:4px;line-height:1;">' + tick + '</div>' : '') +
         '</div>'
       }).join('')
 

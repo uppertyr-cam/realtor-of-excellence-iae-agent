@@ -386,3 +386,14 @@ DO $$ BEGIN
     ALTER TABLE clients ADD COLUMN wa_marketing_template_cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0.043600;
   END IF;
 END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='message_log' AND column_name='wa_message_id'
+  ) THEN
+    ALTER TABLE message_log ADD COLUMN wa_message_id TEXT;
+    ALTER TABLE message_log ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'sent';
+    CREATE INDEX IF NOT EXISTS idx_message_log_wa_id ON message_log(wa_message_id) WHERE wa_message_id IS NOT NULL;
+  END IF;
+END $$;

@@ -161,9 +161,9 @@ async function processBumpJob(job: any) {
   )
 
   await db.query(
-    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type)
-     VALUES ($1,$2,'outbound',$3,$4,'bump')`,
-    [contact.id, config.id, channel, message]
+    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type, wa_message_id)
+     VALUES ($1,$2,'outbound',$3,$4,'bump',$5)`,
+    [contact.id, config.id, channel, message, result.message_id || null]
   )
   publishInboxEvent({
     type: 'message_created',

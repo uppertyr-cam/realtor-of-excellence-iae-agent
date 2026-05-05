@@ -115,9 +115,9 @@ export async function handleAIResponseReady(contactId: string, routedKeyword?: D
 
   // ── Log to message_log ────────────────────────────────────
   await db.query(
-    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type)
-     VALUES ($1,$2,'outbound',$3,$4,'ai_reply')`,
-    [contactId, config.id, channel, responseText]
+    `INSERT INTO message_log (contact_id, client_id, direction, channel, content, message_type, wa_message_id)
+     VALUES ($1,$2,'outbound',$3,$4,'ai_reply',$5)`,
+    [contactId, config.id, channel, responseText, sendResult.message_id || null]
   )
   publishInboxEvent({
     type: 'message_created',

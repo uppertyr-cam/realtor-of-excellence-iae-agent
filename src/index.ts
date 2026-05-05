@@ -340,8 +340,15 @@ app.post('/webhook/whatsapp', async (req, res) => {
       const status = value.statuses[0]
       const recipientPhone: string = status.recipient_id || ''
       const deliveryStatus: string = status.status || ''
+      const waMessageId: string = status.id || ''
       if (recipientPhone && ['sent', 'delivered', 'read', 'failed'].includes(deliveryStatus)) {
         const { db: statusDb } = await import('./db/client')
+        if (waMessageId) {
+          statusDb.query(
+            `UPDATE message_log SET delivery_status=$1 WHERE wa_message_id=$2`,
+            [deliveryStatus, waMessageId]
+          ).catch(() => {})
+        }
         statusDb.query(
           `UPDATE contacts SET
              last_delivery_status=$1,
