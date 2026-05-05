@@ -23,6 +23,15 @@ Entry point: `src/index.ts`
 - Never display, repeat, or reference actual values from `.env` in chat — not API keys, secrets, tokens, database URLs, or any credentials
 - If `.env` is opened or read, use it silently to understand config only — never echo its contents
 
+## Email / Notification Variables
+
+When checking email config on the VPS, always grep with the full pattern — never grep partially:
+```
+grep -E 'EMAIL|REPORT|GMAIL|ALERT|NOTIFICATION' /root/iae-agent/.env
+```
+
+Full variable map is in `docs/configuration.md`. Sean Britt (+27836528213) is WhatsApp only for AI escalations — never use for operational/system alerts.
+
 ---
 
 ## Session Handoff
