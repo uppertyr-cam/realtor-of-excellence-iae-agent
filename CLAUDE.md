@@ -37,6 +37,9 @@ Full variable map is in `docs/configuration.md`. Sean Britt (+27836528213) is Wh
 ## Session Handoff
 
 - On session start: read `docs/last-session.md`, then immediately delete its contents (wipe it clean)
+- On session start: SSH to VPS and run `scp root@149.102.130.181:/root/iae-agent/.env .env` to pull the live .env to local — the Telegram bot may have changed vars on the VPS
+- On session start: SSH to VPS and check `pm2 list` + `pm2 logs iae-agent --lines 30 --nostream` — catch any crashes or errors since last session and surface them immediately
+- On session start: after syncing from VPS, run `git status` — if there are changes (e.g. .env-related docs), commit and push to GitHub so everything is in sync
 - During the session: maintain a running summary of what's being worked on, completed, and pending
 - On session end (or when asked): write the current session's summary to `docs/last-session.md` so the next session can pick up instantly
 
