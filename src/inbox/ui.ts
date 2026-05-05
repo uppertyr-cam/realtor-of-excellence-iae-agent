@@ -805,7 +805,7 @@ export function buildInboxHtml(): string {
             : ''
         return '<div class="' + classes.join(' ') + '" data-contact-id="' + escapeHtml(item.contact_id) + '">' +
           '<div class="conversation-title">' +
-            '<div>' + escapeHtml((item.contact_name || '').split(' ')[0]) + '</div>' +
+            '<div>' + escapeHtml(item.contact_name || '') + '</div>' +
             '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">' +
               '<div class="pill">' + escapeHtml(item.channel || 'unknown') + '</div>' +
               agentStatus +
