@@ -805,7 +805,7 @@ export function buildInboxHtml(): string {
             : ''
         return '<div class="' + classes.join(' ') + '" data-contact-id="' + escapeHtml(item.contact_id) + '">' +
           '<div class="conversation-title">' +
-            '<div>' + escapeHtml(item.contact_name) + '</div>' +
+            '<div>' + escapeHtml((item.contact_name || '').split(' ')[0]) + '</div>' +
             '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">' +
               '<div class="pill">' + escapeHtml(item.channel || 'unknown') + '</div>' +
               agentStatus +
@@ -877,7 +877,7 @@ export function buildInboxHtml(): string {
       header.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">' +
           '<button class="mobile-back-btn ghost" id="mobile-back-btn" style="width:auto;margin-top:0;padding:8px 12px;font-size:13px;border-radius:12px;flex-shrink:0;">← Back</button>' +
-          '<h3 style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(detail.contact.contact_name) + '</h3>' +
+          '<h3 style="flex:1;">' + escapeHtml(detail.contact.contact_name) + '</h3>' +
           '<button class="mobile-workflow-toggle ghost" id="mobile-workflow-toggle" style="width:auto;margin-top:0;padding:8px 12px;font-size:13px;border-radius:12px;flex-shrink:0;">Info</button>' +
         '</div>' +
         '<div class="thread-meta">Conversation timeline</div>'
