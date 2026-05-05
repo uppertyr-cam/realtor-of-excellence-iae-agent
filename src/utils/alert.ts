@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { db } from '../db/client'
+import { sendTelegramMessage } from '../telegram/index'
 
 export function noNumberEmail(contact: { name: string; phone: string; id: string }): void {
   const FROM_EMAIL   = process.env.FROM_EMAIL || ''
@@ -8,6 +9,8 @@ export function noNumberEmail(contact: { name: string; phone: string; id: string
   const CC           = process.env.ALERT_EMAIL || ''
 
   if (!FROM_EMAIL || !APP_PASSWORD || !TO) return
+
+  sendTelegramMessage(`No WhatsApp Number\nContact: ${contact.name} (${contact.phone})\nCharmaine has been emailed.`)
 
   const subject = `Action Required: No WhatsApp Number — ${contact.name}`
 
@@ -122,6 +125,7 @@ export function alertEmail(subject: string, context: Record<string, unknown>): v
   const last = cooldowns.get(subject) || 0
   if (Date.now() - last < COOLDOWN_MS) return
   cooldowns.set(subject, Date.now())
+  sendTelegramMessage(`Alert: ${subject}\n${Object.entries(context).map(([k, v]) => `${k}: ${String(v)}`).join('\n')}`)
   const FROM_EMAIL   = process.env.FROM_EMAIL || ''
   const REPORT_EMAIL = process.env.ALERT_EMAIL || process.env.REPORT_EMAIL || ''
   const APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '')

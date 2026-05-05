@@ -15,6 +15,7 @@ import { listEmailInbox } from './inbox/email-queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
 import { alertEmail, noNumberEmail } from './utils/alert'
+import { startTelegramBot } from './telegram/index'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -988,6 +989,7 @@ function requireAdminSecret(
 app.listen(PORT, () => {
   logger.info(`IAE Agent running on port ${PORT}`)
   startScheduler()
+  startTelegramBot()
 })
 
 export default app

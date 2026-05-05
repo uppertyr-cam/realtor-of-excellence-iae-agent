@@ -16,6 +16,23 @@ INTERNAL_WEBHOOK_SECRET  Any strong random string — required in all webhook he
 PORT                     Default 3000
 ```
 
+## Email & Notification Variables (VPS `/root/iae-agent/.env`)
+
+| Variable | Purpose |
+|---|---|
+| `FROM_EMAIL` / `NOTIFICATION_FROM_EMAIL` | Sender address for all outgoing emails (cameron@hyperzenai.com) |
+| `GMAIL_APP_PASSWORD` | Gmail app password for the sender |
+| `REPORT_EMAIL` / `ALERT_EMAIL` / `NOTIFICATION_TEST_TO` | Weekly report + system alerts → Cameron's Gmail |
+| `NOTIFICATION_CC_EMAIL` | CC'd on all notification emails → Charmaine (charmaine@realgroup.co.za) |
+| `NOTIFICATION_TO_QUALIFIED` | Buyer qualified → Vennessa (reception@realgroup.co.za) |
+| `NOTIFICATION_TO_INTERESTED` | Interested in purchasing → Dorinda (dorinda@realgroup.co.za) |
+| `NOTIFICATION_TO_RENTING` | Wants to rent → James (james@realgroup.co.za) |
+| `NOTIFICATION_TO_CLOSED` | Not interested / already bought → Charmaine (charmaine@realgroup.co.za) |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token from @BotFather |
+| `TELEGRAM_ALLOWED_CHAT_ID` | Cameron's Telegram chat ID — bot ignores all other senders |
+
+**Sean Britt +27836528213** — WhatsApp only, AI escalations only. Never operational alerts.
+
 ## Client Config (stored in `clients` table, not env vars)
 
 Each client has their own:

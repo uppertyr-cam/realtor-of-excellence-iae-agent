@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { db } from '../db/client'
 import { logger } from '../utils/logger'
+import { sendTelegramMessage } from '../telegram/index'
 
 type NotificationOutcome =
   | 'buyer_qualified'
@@ -261,6 +262,11 @@ export async function sendLeadNotification(contact: NotificationContact, outcome
         info.messageId || null,
       ]
     ).catch(() => {})
+
+    if (outcome === 'buyer_qualified') {
+      const name = fullName(contact)
+      sendTelegramMessage(`Qualified Buyer\n${name}\nPhone: ${contact.phone_number}`)
+    }
   } catch (err: any) {
     await db.query(
       `INSERT INTO email_log (
