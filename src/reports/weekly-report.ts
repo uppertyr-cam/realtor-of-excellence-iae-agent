@@ -61,6 +61,7 @@ const TAG_TO_OUTCOME: Record<string, string> = {
   interested_in_purchasing: 'Interested in Buying',
   already_purchased:     'Already Purchased',
   bump_no_reply:         'No Reply',
+  non_whatsapp_number:   'No Valid Number',
 }
 
 function getOutcomeLabel(tags: string[]): string {
