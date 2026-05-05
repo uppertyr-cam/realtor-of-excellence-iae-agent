@@ -196,10 +196,10 @@ export function buildInboxHtml(): string {
       padding: 8px;
     }
     .conversation {
-      padding: 14px;
-      border-radius: 18px;
+      padding: 10px 14px;
+      border-radius: 14px;
       border: 1px solid transparent;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       cursor: pointer;
       background: transparent;
       transition: 0.18s ease;
@@ -812,8 +812,7 @@ export function buildInboxHtml(): string {
             '</div>' +
           '</div>' +
           '<div class="conversation-subtitle">' + escapeHtml(item.client_name) + ' • ' + escapeHtml(item.workflow_stage || 'unknown') + '</div>' +
-          '<div class="conversation-preview">' + escapeHtml(item.last_message || 'No messages yet') + '</div>' +
-          '<div class="conversation-subtitle" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">' +
+          '<div class="conversation-subtitle" style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">' +
             '<span>' + escapeHtml(formatDate(item.last_message_at || item.updated_at)) + '</span>' +
             (item.next_action_due
               ? (item.next_action_type === 'first_message'
