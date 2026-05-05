@@ -563,11 +563,52 @@ export function buildInboxHtml(): string {
       color: var(--muted);
     }
     @media (max-width: 920px) {
-      .layout { grid-template-columns: 1fr; }
-      .sidebar { min-height: 280px; max-height: 38vh; }
       .thread-body { grid-template-columns: 1fr; }
       .workflow-panel { position: static; order: -1; }
       .message { max-width: 92%; }
+    }
+    .mobile-back-btn, .mobile-workflow-toggle { display: none; }
+    @media (max-width: 640px) {
+      .topbar { padding: 12px 14px; }
+      .topbar h2 { font-size: 20px; }
+      .topbar > div:last-child { gap: 6px; }
+      .topbar-nav { margin-top: 6px; gap: 6px; }
+      .topbar-nav button { padding: 7px 10px !important; font-size: 12px; }
+      .layout {
+        display: block;
+        position: relative;
+        overflow: hidden;
+      }
+      .sidebar {
+        position: absolute;
+        inset: 0;
+        max-height: none;
+        min-height: 0;
+        z-index: 1;
+        border-right: none;
+        transition: transform 0.22s ease;
+      }
+      .thread-panel {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        transform: translateX(100%);
+        transition: transform 0.22s ease;
+      }
+      .layout.show-thread .thread-panel { transform: translateX(0); }
+      .layout.show-thread .sidebar { transform: translateX(-30%); }
+      .thread-body { padding: 12px; gap: 10px; }
+      .thread-header { padding: 12px 14px 10px; }
+      .thread-header h3 { font-size: 20px; margin: 0; }
+      .workflow-panel { display: none; max-height: none; }
+      .workflow-panel.mobile-open { display: block; position: static; }
+      .message { max-width: 88%; }
+      .composer { padding-top: 10px; }
+      .composer textarea { min-height: 68px; }
+      .mobile-back-btn, .mobile-workflow-toggle { display: inline-flex; }
     }
   </style>
 </head>
@@ -637,7 +678,15 @@ export function buildInboxHtml(): string {
       if (!sidebar || !tools || !list) return
       list.style.height = (sidebar.clientHeight - tools.clientHeight) + 'px'
     }
-    window.addEventListener('resize', sizeSidebarList)
+    window.addEventListener('resize', function () {
+      sizeSidebarList()
+      if (!isMobile()) {
+        const layout = document.querySelector('.layout')
+        if (layout) layout.classList.remove('show-thread')
+        const panel = document.querySelector('.workflow-panel')
+        if (panel) panel.classList.remove('mobile-open')
+      }
+    })
 
     const state = {
       user: null,
@@ -652,8 +701,11 @@ export function buildInboxHtml(): string {
       search: '',
       filter: 'all',
       loadingThread: false,
-      scrollProxyBound: false
+      scrollProxyBound: false,
+      mobilePanel: 'list'
     }
+
+    function isMobile() { return window.innerWidth <= 640 }
 
     function escapeHtml(value) {
       return String(value || '')
@@ -823,8 +875,29 @@ export function buildInboxHtml(): string {
           ? 'Agent replied, waiting on FAQ approval'
           : ''
       header.innerHTML =
-        '<h3>' + escapeHtml(detail.contact.contact_name) + '</h3>' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">' +
+          '<button class="mobile-back-btn ghost" id="mobile-back-btn" style="width:auto;margin-top:0;padding:8px 12px;font-size:13px;border-radius:12px;flex-shrink:0;">← Back</button>' +
+          '<h3 style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(detail.contact.contact_name) + '</h3>' +
+          '<button class="mobile-workflow-toggle ghost" id="mobile-workflow-toggle" style="width:auto;margin-top:0;padding:8px 12px;font-size:13px;border-radius:12px;flex-shrink:0;">Info</button>' +
+        '</div>' +
         '<div class="thread-meta">Conversation timeline</div>'
+
+      const backBtn = document.getElementById('mobile-back-btn')
+      if (backBtn) {
+        backBtn.addEventListener('click', function () {
+          state.mobilePanel = 'list'
+          const layout = document.querySelector('.layout')
+          if (layout) layout.classList.remove('show-thread')
+        })
+      }
+      const infoToggle = document.getElementById('mobile-workflow-toggle')
+      if (infoToggle) {
+        infoToggle.addEventListener('click', function () {
+          const panel = document.querySelector('.workflow-panel')
+          if (panel) panel.classList.toggle('mobile-open')
+          infoToggle.textContent = panel && panel.classList.contains('mobile-open') ? 'Hide Info' : 'Info'
+        })
+      }
 
       const messagesHtml = detail.messages.map(function (message) {
         return '<div class="message ' + escapeHtml(message.direction) + '">' +
@@ -1222,7 +1295,7 @@ export function buildInboxHtml(): string {
       state.conversations = data.conversations || []
       state.counts = data.counts || state.counts
       renderConversationList()
-      if (!state.activeContactId && state.conversations.length) {
+      if (!state.activeContactId && state.conversations.length && !isMobile()) {
         openConversation(state.conversations[0].contact_id)
       }
     }
@@ -1232,6 +1305,11 @@ export function buildInboxHtml(): string {
       state.loadingThread = true
       state.activeContactId = contactId
       renderConversationList()
+      if (isMobile()) {
+        state.mobilePanel = 'thread'
+        const layout = document.querySelector('.layout')
+        if (layout) layout.classList.add('show-thread')
+      }
       try {
         const detail = await api('/inbox/api/conversations/' + encodeURIComponent(contactId))
         renderThread(detail)
