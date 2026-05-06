@@ -824,6 +824,14 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
     const maxDays: number | undefined = req.body.max_days !== undefined ? Number(req.body.max_days) : undefined
     const PAGE = 100
 
+    // Build set of contact_ids already shown in any previous preview (all statuses, last 90 days)
+    const shownRes = await dbClient.query(
+      `SELECT DISTINCT jsonb_array_elements(contacts)->>'contact_id' AS cid
+       FROM bulk_import_pending
+       WHERE created_at > NOW() - INTERVAL '90 days'`
+    )
+    const shownIds = new Set(shownRes.rows.map((r: any) => r.cid))
+
     const preview: any[] = []
     let done = false
 
@@ -859,14 +867,16 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
             firstName = firstName.slice(0, spaceIdx).trim()
           }
 
+          const personId = person.id?.toString()
+          if (shownIds.has(personId)) continue
           const existing = await dbClient.query(
             'SELECT id FROM contacts WHERE client_id=$1 AND id=$2',
-            ['realtor_of_excellence', person.id?.toString()]
+            ['realtor_of_excellence', personId]
           )
           if (existing.rows.length > 0) continue
 
           preview.push({
-            contact_id:    person.id?.toString(),
+            contact_id:    personId,
             first_name:    firstName,
             last_name:     lastName || undefined,
             phone:         phones[0],
