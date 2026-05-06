@@ -825,15 +825,15 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
     const PAGE = 100
 
     const preview: any[] = []
-    let offset = 0
+    let nextUrl: string | null = null
     let done = false
 
     while (!done) {
-      const r = await axios.get(`${fubBase}/people`, {
-        auth,
-        params: { limit: PAGE, offset, sort: 'lastContacted' },
-      })
+      const r: any = nextUrl
+        ? await axios.get(nextUrl, { auth })
+        : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted' } })
       const page: any[] = r.data?.people || []
+      nextUrl = r.data?._metadata?.nextLink || null
 
       for (const person of page) {
         if (preview.length >= limit) { done = true; break }
@@ -880,8 +880,7 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
         })
       }
 
-      if (page.length < PAGE) break
-      offset += PAGE
+      if (!nextUrl) break
     }
 
     // Store as pending
@@ -946,17 +945,17 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
     const triggered: { contact_id: string; name: string; phone: string }[] = []
     const skipped:   { contact_id: string; name: string; reason: string }[] = []
     let totalFetched = 0
-    let offset = 0
+    let nextUrl: string | null = null
     let done = false
 
     // FUB doesn't support source/stage query params — fetch pages and filter in app code
     while (!done) {
-      const r = await axios.get(`${fubBase}/people`, {
-        auth,
-        params: { limit: PAGE, offset, sort: 'lastContacted' },
-      })
+      const r: any = nextUrl
+        ? await axios.get(nextUrl, { auth })
+        : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted' } })
       const page: any[] = r.data?.people || []
       totalFetched += page.length
+      nextUrl = r.data?._metadata?.nextLink || null
 
       for (const person of page) {
         if (triggered.length >= limit) { done = true; break }
@@ -1032,8 +1031,7 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
         }
       }
 
-      if (page.length < PAGE) break  // reached end of FUB contacts
-      offset += PAGE
+      if (!nextUrl) break  // reached end of FUB contacts
     }
 
     res.json({
