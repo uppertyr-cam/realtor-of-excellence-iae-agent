@@ -911,7 +911,8 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
 
     res.json({ ok: true, count: preview.length })
   } catch (err: any) {
-    logger.error('daily-import-preview error', { error: err.message })
+    const detail = err.response?.data || err.message
+    logger.error('daily-import-preview error', { error: err.message, detail })
     res.status(500).json({ error: err.message })
   }
 })
