@@ -2,6 +2,7 @@ import { exec } from 'child_process'
 import fs from 'fs'
 import { promisify } from 'util'
 import { db } from '../db/client'
+import { handleCrmWebhook } from '../workflows/outbound-first-message'
 
 const execAsync = promisify(exec)
 
@@ -117,4 +118,43 @@ export async function getActivityLog(): Promise<string> {
 
 export async function restartServer(): Promise<string> {
   return runBash('pm2 restart iae-agent')
+}
+
+export async function approveImport(): Promise<string> {
+  const pending = await db.query(
+    `SELECT id, contacts FROM bulk_import_pending WHERE status='pending' ORDER BY created_at DESC LIMIT 1`
+  )
+  if (!pending.rows.length) return 'No pending import found. Nothing to approve.'
+
+  const { id, contacts } = pending.rows[0]
+  const list: any[] = contacts
+
+  for (const contact of list) {
+    handleCrmWebhook({
+      contact_id:            contact.contact_id,
+      phone_number:          contact.phone,
+      phone_numbers:         contact.phone_numbers,
+      first_name:            contact.first_name,
+      last_name:             contact.last_name,
+      email:                 contact.email,
+      client_id:             contact.client_id,
+      assigned_to:           contact.assigned_to,
+      crm_last_contacted_at: contact.last_contacted,
+      crm_type:              'followupboss',
+      crm_callback_url:      '',
+    }, 'followupboss').catch(() => {})
+    await new Promise(r => setTimeout(r, 200))
+  }
+
+  await db.query(`UPDATE bulk_import_pending SET status='approved' WHERE id=$1`, [id])
+  return `✅ Import approved. ${list.length} contact${list.length !== 1 ? 's' : ''} queued for outreach.`
+}
+
+export async function skipImport(): Promise<string> {
+  const pending = await db.query(
+    `SELECT id FROM bulk_import_pending WHERE status='pending' ORDER BY created_at DESC LIMIT 1`
+  )
+  if (!pending.rows.length) return 'No pending import found.'
+  await db.query(`UPDATE bulk_import_pending SET status='skipped' WHERE id=$1`, [pending.rows[0].id])
+  return `⏭ Today's import skipped. No contacts queued.`
 }

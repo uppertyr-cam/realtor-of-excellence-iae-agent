@@ -15,7 +15,7 @@ import { listEmailInbox } from './inbox/email-queries'
 import { publishInboxEvent, subscribeInboxEvents } from './inbox/live-events'
 import { approvePendingAiReply, assignConversation, sendManualReply, setAutomationPaused, setConversationResolved } from './inbox/actions'
 import { alertEmail, noNumberEmail } from './utils/alert'
-import { startTelegramBot } from './telegram/index'
+import { sendTelegramMessage, startTelegramBot } from './telegram/index'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -804,6 +804,117 @@ const DEFAULT_BULK_IMPORT_STAGES = [
   'Lead', 'Buyer', 'Hot Buyer', 'Warm Buyer',
   'Cold Buyer', 'Future Buyer', 'Buyer Nurture',
 ]
+
+// Preview today's batch, store as pending, send Telegram message for approval.
+// Body: same as /admin/bulk-import (dry_run is forced true internally)
+app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => {
+  try {
+    const { getClientConfig } = await import('./config/client-config')
+    const { db: dbClient } = await import('./db/client')
+    const config = await getClientConfig('realtor_of_excellence')
+    if (!config.crm_api_key) return res.status(400).json({ error: 'No crm_api_key on client' })
+
+    const fubBase = config.crm_base_url || 'https://api.followupboss.com/v1'
+    const auth    = { username: config.crm_api_key, password: '' }
+    const limit   = req.body.daily_limit !== undefined ? Number(req.body.daily_limit) : 5
+    const source: string   = req.body.source || 'Property24 Leads'
+    const stages: string[] = req.body.stages || DEFAULT_BULK_IMPORT_STAGES
+    const lastContactedEmpty = !!req.body.last_contacted_empty
+    const minDays: number | undefined = req.body.min_days !== undefined ? Number(req.body.min_days) : undefined
+    const maxDays: number | undefined = req.body.max_days !== undefined ? Number(req.body.max_days) : undefined
+    const PAGE = 100
+
+    const preview: any[] = []
+    let offset = 0
+    let done = false
+
+    while (!done) {
+      const r = await axios.get(`${fubBase}/people`, {
+        auth,
+        params: { limit: PAGE, offset, sort: 'lastContacted' },
+      })
+      const page: any[] = r.data?.people || []
+
+      for (const person of page) {
+        if (preview.length >= limit) { done = true; break }
+        if (person.source !== source) continue
+        if (!stages.includes(person.stage)) continue
+
+        const lc: string | null = person.lastContacted || null
+        if (lastContactedEmpty) {
+          if (!(lc === null || lc === '')) continue
+        } else if (minDays !== undefined && maxDays !== undefined) {
+          if (!lc) continue
+          const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
+          if (!(days >= minDays && days <= maxDays)) continue
+        }
+
+        const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+        if (!phones.length) continue
+
+        let firstName: string = (person.firstName || '').split('\n')[0].trim()
+        let lastName: string  = (person.lastName  || '').split('\n')[0].trim()
+        if (firstName && !lastName && firstName.includes(' ')) {
+          const spaceIdx = firstName.indexOf(' ')
+          lastName  = firstName.slice(spaceIdx + 1).trim()
+          firstName = firstName.slice(0, spaceIdx).trim()
+        }
+
+        const existing = await dbClient.query(
+          'SELECT id FROM contacts WHERE client_id=$1 AND id=$2',
+          ['realtor_of_excellence', person.id?.toString()]
+        )
+        if (existing.rows.length > 0) continue
+
+        preview.push({
+          contact_id:    person.id?.toString(),
+          first_name:    firstName,
+          last_name:     lastName || undefined,
+          phone:         phones[0],
+          phone_numbers: phones.length > 1 ? phones : undefined,
+          email:         person.emails?.[0]?.value,
+          client_id:     'realtor_of_excellence',
+          assigned_to:   person.assignedTo || undefined,
+          stage:         person.stage || 'Unknown',
+          last_contacted: lc,
+        })
+      }
+
+      if (page.length < PAGE) break
+      offset += PAGE
+    }
+
+    // Store as pending
+    await dbClient.query(
+      `UPDATE bulk_import_pending SET status='expired' WHERE status='pending'`
+    )
+    await dbClient.query(
+      `INSERT INTO bulk_import_pending (contacts) VALUES ($1)`,
+      [JSON.stringify(preview)]
+    )
+
+    // Build Telegram message
+    const date = new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Johannesburg' })
+    const lines = preview.map((c, i) => {
+      const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown'
+      const daysAgo = c.last_contacted
+        ? Math.round((Date.now() - new Date(c.last_contacted).getTime()) / 86_400_000) + ' days ago'
+        : 'Never contacted'
+      return `${i + 1}. *${name}* | ${c.stage}\n   📞 ${c.phone}\n   👤 ${c.assigned_to || 'Unassigned'}\n   🕐 Last contacted: ${daysAgo}`
+    })
+
+    const message = preview.length === 0
+      ? `📋 *Daily Import — ${date}*\n\nNo new contacts matched today's filters.`
+      : `📋 *Daily Import Preview — ${date}*\n\n${lines.join('\n\n')}\n\nReply *approve* to send, or *skip* to cancel today's run.`
+
+    sendTelegramMessage(message)
+
+    res.json({ ok: true, count: preview.length })
+  } catch (err: any) {
+    logger.error('daily-import-preview error', { error: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
 
 // Pull today's batch of Property24 Leads from FUB — pages through contacts, filters by
 // source/stage/lastContacted in app code, stops as soon as daily_limit new contacts are found.

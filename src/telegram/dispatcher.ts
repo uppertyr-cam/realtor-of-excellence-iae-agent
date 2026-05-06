@@ -2,6 +2,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { logger } from '../utils/logger'
 import {
+  approveImport,
   getActivityLog,
   getContacts,
   getDailySummary,
@@ -10,6 +11,7 @@ import {
   readFile,
   restartServer,
   runBash,
+  skipImport,
 } from './actions'
 
 const execAsync = promisify(exec)
@@ -29,6 +31,8 @@ Available JSON actions:
 {"action":"restart_server"}
 {"action":"run_bash","command":"<bash command>"}
 {"action":"read_file","path":"<absolute file path>"}
+{"action":"approve_import"}
+{"action":"skip_import"}
 
 Rules:
 - Return raw JSON only when a tool/action is required
@@ -82,6 +86,10 @@ async function executeAction(action: Record<string, any>): Promise<string> {
       return runBash(action.command || '')
     case 'read_file':
       return readFile(action.path || '')
+    case 'approve_import':
+      return approveImport()
+    case 'skip_import':
+      return skipImport()
     default:
       return `Unknown action: ${action.action}`
   }
@@ -95,6 +103,8 @@ async function keywordFallback(msg: string): Promise<string> {
   if (lower.includes('summary') || lower.includes('today')) return getDailySummary()
   if (lower.includes('event') || lower.includes('message')) return getRecentEvents(10)
   if (lower.includes('restart')) return restartServer()
+  if (lower === 'approve' || lower.includes('approve import')) return approveImport()
+  if (lower === 'skip' || lower.includes('skip import')) return skipImport()
   const bashMatch = msg.match(/^(?:run|bash|exec|shell)[:\s]+(.+)/i)
   if (bashMatch) return runBash(bashMatch[1])
   return `I can chat normally once Claude CLI is installed on the server. Right now fallback mode is active, so try: "status", "contacts", "today's summary", "activity log", or "run: <bash command>"`

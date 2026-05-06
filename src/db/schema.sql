@@ -377,6 +377,13 @@ BEGIN
   END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS bulk_import_pending (
+  id         SERIAL PRIMARY KEY,
+  contacts   JSONB NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'pending', -- pending | approved | skipped | expired
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
