@@ -841,10 +841,8 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
         for (const person of page) {
           if (preview.length >= limit) { done = true; break }
 
-          const lc: string | null = person.lastContacted || null
-          if (lastContactedEmpty) {
-            if (!(lc === null || lc === '')) continue
-          } else if (minDays !== undefined && maxDays !== undefined) {
+          const lc: string | null = person.lastActivity || person.lastContacted || null
+          if (minDays !== undefined && maxDays !== undefined) {
             if (!lc) continue
             const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
             if (!(days >= minDays && days <= maxDays)) continue
@@ -964,10 +962,8 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
         for (const person of page) {
           if (triggered.length >= limit) { done = true; break }
 
-          const lc: string | null = person.lastContacted || null
-          if (lastContactedEmpty) {
-            if (!(lc === null || lc === '')) continue
-          } else if (minDays !== undefined && maxDays !== undefined) {
+          const lc: string | null = person.lastActivity || person.lastContacted || null
+          if (minDays !== undefined && maxDays !== undefined) {
             if (!lc) continue
             const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
             if (!(days >= minDays && days <= maxDays)) continue
@@ -1012,7 +1008,7 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
             email:                 person.emails?.[0]?.value,
             client_id,
             assigned_to:           person.assignedTo || undefined,
-            crm_last_contacted_at: person.lastContacted || undefined,
+            crm_last_contacted_at: person.lastActivity || person.lastContacted || undefined,
           }
 
           triggered.push({ contact_id: id, name, phone: phones[0] })
