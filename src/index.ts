@@ -899,14 +899,15 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
         }
 
         const payload = {
-          contact_id:    id,
-          phone_number:  phones[0],
-          phone_numbers: phones.length > 1 ? phones : undefined,
-          first_name:    firstName,
-          last_name:     lastName || undefined,
-          email:         person.emails?.[0]?.value,
+          contact_id:            id,
+          phone_number:          phones[0],
+          phone_numbers:         phones.length > 1 ? phones : undefined,
+          first_name:            firstName,
+          last_name:             lastName || undefined,
+          email:                 person.emails?.[0]?.value,
           client_id,
-          assigned_to:   person.assignedTo || undefined,
+          assigned_to:           person.assignedTo || undefined,
+          crm_last_contacted_at: person.lastContacted || undefined,
         }
 
         triggered.push({ contact_id: id, name, phone: phones[0] })
