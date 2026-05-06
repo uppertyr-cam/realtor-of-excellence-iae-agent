@@ -841,7 +841,7 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
     while (!done) {
       const r = await axios.get(`${fubBase}/people`, {
         auth,
-        params: { limit: PAGE, offset, sort: '-created' },
+        params: { limit: PAGE, offset, sort: 'lastContacted' },
       })
       const page: any[] = r.data?.people || []
       totalFetched += page.length
