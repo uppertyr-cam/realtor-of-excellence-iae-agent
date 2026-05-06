@@ -883,6 +883,13 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
       }
     }
 
+    // Sort by last activity ascending: 30 days ago first, 360 days last
+    preview.sort((a, b) => {
+      const da = a.last_contacted ? new Date(a.last_contacted).getTime() : 0
+      const db2 = b.last_contacted ? new Date(b.last_contacted).getTime() : 0
+      return db2 - da  // most recent date first = fewest days ago first
+    })
+
     // Store as pending
     await dbClient.query(
       `UPDATE bulk_import_pending SET status='expired' WHERE status='pending'`
