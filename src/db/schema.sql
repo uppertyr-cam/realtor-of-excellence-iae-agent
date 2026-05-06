@@ -188,6 +188,7 @@ CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone_number);
 CREATE INDEX IF NOT EXISTS idx_contacts_stage ON contacts(workflow_stage);
 CREATE INDEX IF NOT EXISTS idx_queue_status ON outbound_queue(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_queue_client ON outbound_queue(client_id, status);
+CREATE INDEX IF NOT EXISTS idx_queue_drip ON outbound_queue(status, message_type, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_buffer_contact ON message_buffer(contact_id, received_at);
 CREATE INDEX IF NOT EXISTS idx_ai_responses_contact ON ai_responses(contact_id, status);
 CREATE INDEX IF NOT EXISTS idx_log_contact ON message_log(contact_id);
@@ -358,6 +359,13 @@ BEGIN
     WHERE table_name='contacts' AND column_name='assigned_to'
   ) THEN
     ALTER TABLE contacts ADD COLUMN assigned_to TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='contacts' AND column_name='crm_last_contacted_at'
+  ) THEN
+    ALTER TABLE contacts ADD COLUMN crm_last_contacted_at TIMESTAMPTZ;
   END IF;
 
   -- Tag-to-prompt routing: maps workflow tag → prompt file path

@@ -173,6 +173,9 @@ async function processBufferedMessages(contactId: string, channel: string) {
       conversation_history: newMemory,
       client_name:       config.name,
       assigned_to:       contact.assigned_to || 'your assigned agent',
+      crm_last_contacted_at: contact.crm_last_contacted_at
+        ? new Date(contact.crm_last_contacted_at).toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Africa/Johannesburg' })
+        : 'unknown',
     }
 
     // ── Step 12: Route based on stage ────────────────────────

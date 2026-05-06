@@ -69,8 +69,8 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
     `INSERT INTO contacts (
        id, client_id, crm_source, crm_callback_url,
        phone_number, first_name, last_name, email, workflow_stage,
-       webhook_received_at, assigned_to, tags
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9,ARRAY['ai_database_reactivation'])
+       webhook_received_at, assigned_to, crm_last_contacted_at, tags
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',NOW(),$9,$10,ARRAY[]::text[])
      ON CONFLICT (id) DO UPDATE SET
        client_id = EXCLUDED.client_id,
        crm_source = EXCLUDED.crm_source,
@@ -81,13 +81,15 @@ export async function handleCrmWebhook(rawPayload: any, crmType: string) {
        email = EXCLUDED.email,
        workflow_stage = 'pending',
        assigned_to = EXCLUDED.assigned_to,
-       tags = ARRAY(SELECT DISTINCT UNNEST(array_remove(contacts.tags, 'non_whatsapp_number') || ARRAY['ai_database_reactivation'])),
+       crm_last_contacted_at = EXCLUDED.crm_last_contacted_at,
+       tags = ARRAY(SELECT DISTINCT UNNEST(array_remove(contacts.tags, 'non_whatsapp_number'))),
        updated_at = NOW()`,
     [
       webhook.contact_id, webhook.client_id, webhook.crm_type,
       webhook.crm_callback_url, webhook.phone_number,
       webhook.first_name, webhook.last_name, webhook.email,
       webhook.assigned_to || null,
+      webhook.crm_last_contacted_at || null,
     ]
   )
 
@@ -380,7 +382,7 @@ async function sendFirstMessage(job: any, config: any) {
     `UPDATE contacts SET
        workflow_stage='active',
        tags=ARRAY(
-         SELECT DISTINCT UNNEST(tags || ARRAY['first_message_sent', 'database_reactivation', 'ai_database_reactivation'])
+         SELECT DISTINCT UNNEST(tags || ARRAY['first_message_sent', 'database_reactivation'])
        ),
        first_message_sent=$1,
        first_message_at=$2,
@@ -413,7 +415,7 @@ async function sendFirstMessage(job: any, config: any) {
   await writeToCrm(
     {
       contact_id: contact.id,
-      tags_add: ['first_message_sent', 'database_reactivation', 'ai_database_reactivation', 'follow_ups_scheduled'],
+      tags_add: ['first_message_sent', 'database_reactivation', 'follow_ups_scheduled'],
       note: `Outbound First Message: First message sent via ${deliveryChannel}.\n\nMessage: ${message}\n\nTimestamp: ${now.toISOString()}\nCRM Source: ${contact.crm_source}`,
       fields: {
         first_message_sent: message,

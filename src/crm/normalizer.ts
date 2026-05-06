@@ -68,13 +68,14 @@ function normalizeFollowUpBoss(raw: any): InboundWebhook {
     contact_id:       raw.id?.toString() || raw.contact_id,
     phone_number:     allPhones[0] || raw.phone_number,
     phone_numbers:    allPhones.length > 1 ? allPhones : undefined,
-    first_name:       raw.firstName || raw.first_name || '',
-    last_name:        raw.lastName || raw.last_name,
+    first_name:       (raw.firstName || raw.first_name || '').split('\n')[0].trim(),
+    last_name:        (raw.lastName || raw.last_name || '').split('\n')[0].trim() || undefined,
     email:            raw.emails?.[0]?.value || raw.email,
     client_id:        raw.client_id,
     crm_type:         'followupboss',
     crm_callback_url: raw.crm_callback_url,
-    assigned_to:      raw.assignedTo || undefined,
+    assigned_to:          raw.assignedTo || undefined,
+    crm_last_contacted_at: raw.lastActivity || raw.lastContacted || undefined,
   }
 }
 

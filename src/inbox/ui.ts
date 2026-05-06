@@ -947,6 +947,7 @@ export function buildInboxHtml(): string {
           '<div class="workflow-row"><span class="workflow-label">Current workflow</span><div class="workflow-value">' + escapeHtml(detail.contact.workflow_status || detail.contact.workflow_stage || 'unknown') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Current stage</span><div class="workflow-value">' + escapeHtml(detail.contact.workflow_stage || 'unknown') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Assigned to</span><div class="workflow-value">' + escapeHtml(detail.contact.assigned_to || 'Unassigned') + '</div></div>' +
+          '<div class="workflow-row"><span class="workflow-label">Last contacted (CRM)</span><div class="workflow-value">' + escapeHtml(detail.contact.crm_last_contacted_at ? formatDate(detail.contact.crm_last_contacted_at) : '—') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Automation</span><div class="workflow-value">' + escapeHtml(detail.contact.automation_state || 'idle') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Next execution</span><div class="workflow-value">' + escapeHtml(detail.contact.next_action_label || 'No pending execution') + '</div></div>' +
           '<div class="workflow-row"><span class="workflow-label">Next due</span><div class="workflow-value">' + escapeHtml(formatDate(detail.contact.next_action_due) || '—') + '</div></div>' +

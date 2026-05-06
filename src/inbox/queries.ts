@@ -170,6 +170,7 @@ export async function getConversationDetail(contactId: string) {
        c.pending_question,
        c.pending_answer,
        c.assigned_to,
+       c.crm_last_contacted_at,
        queue_next.message_type AS next_action_type,
        queue_next.status AS next_action_status,
        queue_next.scheduled_at AS next_action_due,

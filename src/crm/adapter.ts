@@ -126,7 +126,6 @@ async function writeFollowUpBoss(update: CrmUpdate, config: ClientConfig) {
       (tag) => !(update.tags_remove || []).includes(tag),
     )
     await axios.put(`${base}/people/${update.contact_id}`, {
-      ...(update.fields || {}),
       tags: mergedTags,
     }, { auth })
   }
