@@ -825,62 +825,64 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
     const PAGE = 100
 
     const preview: any[] = []
-    let nextUrl: string | null = null
     let done = false
 
-    while (!done) {
-      const r: any = nextUrl
-        ? await axios.get(nextUrl, { auth })
-        : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted' } })
-      const page: any[] = r.data?.people || []
-      nextUrl = r.data?._metadata?.nextLink || null
+    for (const stage of stages) {
+      if (done) break
+      let nextUrl: string | null = null
 
-      for (const person of page) {
-        if (preview.length >= limit) { done = true; break }
-        if (person.source !== source) continue
-        if (!stages.includes(person.stage)) continue
+      while (true) {
+        const r: any = nextUrl
+          ? await axios.get(nextUrl, { auth })
+          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted', stage, source } })
+        const page: any[] = r.data?.people || []
+        nextUrl = r.data?._metadata?.nextLink || null
 
-        const lc: string | null = person.lastContacted || null
-        if (lastContactedEmpty) {
-          if (!(lc === null || lc === '')) continue
-        } else if (minDays !== undefined && maxDays !== undefined) {
-          if (!lc) continue
-          const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
-          if (!(days >= minDays && days <= maxDays)) continue
+        for (const person of page) {
+          if (preview.length >= limit) { done = true; break }
+
+          const lc: string | null = person.lastContacted || null
+          if (lastContactedEmpty) {
+            if (!(lc === null || lc === '')) continue
+          } else if (minDays !== undefined && maxDays !== undefined) {
+            if (!lc) continue
+            const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
+            if (!(days >= minDays && days <= maxDays)) continue
+          }
+
+          const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+          if (!phones.length) continue
+
+          let firstName: string = (person.firstName || '').split('\n')[0].trim()
+          let lastName: string  = (person.lastName  || '').split('\n')[0].trim()
+          if (firstName && !lastName && firstName.includes(' ')) {
+            const spaceIdx = firstName.indexOf(' ')
+            lastName  = firstName.slice(spaceIdx + 1).trim()
+            firstName = firstName.slice(0, spaceIdx).trim()
+          }
+
+          const existing = await dbClient.query(
+            'SELECT id FROM contacts WHERE client_id=$1 AND id=$2',
+            ['realtor_of_excellence', person.id?.toString()]
+          )
+          if (existing.rows.length > 0) continue
+
+          preview.push({
+            contact_id:    person.id?.toString(),
+            first_name:    firstName,
+            last_name:     lastName || undefined,
+            phone:         phones[0],
+            phone_numbers: phones.length > 1 ? phones : undefined,
+            email:         person.emails?.[0]?.value,
+            client_id:     'realtor_of_excellence',
+            assigned_to:   person.assignedTo || undefined,
+            stage:         person.stage || 'Unknown',
+            last_contacted: lc,
+          })
         }
 
-        const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
-        if (!phones.length) continue
-
-        let firstName: string = (person.firstName || '').split('\n')[0].trim()
-        let lastName: string  = (person.lastName  || '').split('\n')[0].trim()
-        if (firstName && !lastName && firstName.includes(' ')) {
-          const spaceIdx = firstName.indexOf(' ')
-          lastName  = firstName.slice(spaceIdx + 1).trim()
-          firstName = firstName.slice(0, spaceIdx).trim()
-        }
-
-        const existing = await dbClient.query(
-          'SELECT id FROM contacts WHERE client_id=$1 AND id=$2',
-          ['realtor_of_excellence', person.id?.toString()]
-        )
-        if (existing.rows.length > 0) continue
-
-        preview.push({
-          contact_id:    person.id?.toString(),
-          first_name:    firstName,
-          last_name:     lastName || undefined,
-          phone:         phones[0],
-          phone_numbers: phones.length > 1 ? phones : undefined,
-          email:         person.emails?.[0]?.value,
-          client_id:     'realtor_of_excellence',
-          assigned_to:   person.assignedTo || undefined,
-          stage:         person.stage || 'Unknown',
-          last_contacted: lc,
-        })
+        if (done || !nextUrl) break
       }
-
-      if (!nextUrl) break
     }
 
     // Store as pending
@@ -945,93 +947,86 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
     const triggered: { contact_id: string; name: string; phone: string }[] = []
     const skipped:   { contact_id: string; name: string; reason: string }[] = []
     let totalFetched = 0
-    let nextUrl: string | null = null
     let done = false
 
-    // FUB doesn't support source/stage query params — fetch pages and filter in app code
-    while (!done) {
-      const r: any = nextUrl
-        ? await axios.get(nextUrl, { auth })
-        : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted' } })
-      const page: any[] = r.data?.people || []
-      totalFetched += page.length
-      nextUrl = r.data?._metadata?.nextLink || null
+    for (const stage of stages) {
+      if (done) break
+      let nextUrl: string | null = null
 
-      for (const person of page) {
-        if (triggered.length >= limit) { done = true; break }
+      while (true) {
+        const r: any = nextUrl
+          ? await axios.get(nextUrl, { auth })
+          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted', stage, source } })
+        const page: any[] = r.data?.people || []
+        totalFetched += page.length
+        nextUrl = r.data?._metadata?.nextLink || null
 
-        // Source filter
-        if (person.source !== source) continue
+        for (const person of page) {
+          if (triggered.length >= limit) { done = true; break }
 
-        // Stage filter
-        if (!stages.includes(person.stage)) continue
+          const lc: string | null = person.lastContacted || null
+          if (lastContactedEmpty) {
+            if (!(lc === null || lc === '')) continue
+          } else if (minDays !== undefined && maxDays !== undefined) {
+            if (!lc) continue
+            const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
+            if (!(days >= minDays && days <= maxDays)) continue
+          }
 
-        // Last contacted filter
-        const lc: string | null = person.lastContacted || null
-        if (lastContactedEmpty) {
-          if (!(lc === null || lc === '')) continue
-        } else if (minDays !== undefined && maxDays !== undefined) {
-          if (!lc) continue
-          const days = (Date.now() - new Date(lc).getTime()) / 86_400_000
-          if (!(days >= minDays && days <= maxDays)) continue
+          const id    = person.id?.toString()
+          const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
+
+          let firstName: string = (person.firstName || '').trim()
+          let lastName: string  = (person.lastName  || '').trim()
+          if (firstName && !lastName && firstName.includes(' ')) {
+            const spaceIdx = firstName.indexOf(' ')
+            lastName  = firstName.slice(spaceIdx + 1).trim()
+            firstName = firstName.slice(0, spaceIdx).trim()
+          }
+          const name = `${firstName} ${lastName}`.trim()
+
+          if (!phones.length) {
+            skipped.push({ contact_id: id, name, reason: 'no phone number' })
+            continue
+          }
+
+          const existing = await db.query(
+            'SELECT id FROM contacts WHERE client_id = $1 AND id = $2',
+            [client_id, id],
+          )
+          if (existing.rows.length > 0) {
+            skipped.push({ contact_id: id, name, reason: 'already imported' })
+            continue
+          }
+
+          if (lastName && lastName !== (person.lastName || '').trim()) {
+            axios.put(`${fubBase}/people/${id}`, { firstName, lastName }, { auth }).catch(() => {})
+          }
+
+          const payload = {
+            contact_id:            id,
+            phone_number:          phones[0],
+            phone_numbers:         phones.length > 1 ? phones : undefined,
+            first_name:            firstName,
+            last_name:             lastName || undefined,
+            email:                 person.emails?.[0]?.value,
+            client_id,
+            assigned_to:           person.assignedTo || undefined,
+            crm_last_contacted_at: person.lastContacted || undefined,
+          }
+
+          triggered.push({ contact_id: id, name, phone: phones[0] })
+
+          if (!dry_run) {
+            handleCrmWebhook(payload, 'followupboss').catch((err) => {
+              logger.error('bulk-import workflow error', { error: err.message, contact_id: id })
+            })
+            if (batchDelayMs > 0) await new Promise(r => setTimeout(r, batchDelayMs))
+          }
         }
 
-        const id    = person.id?.toString()
-        const phones: string[] = (person.phones || []).map((p: any) => p.value).filter(Boolean)
-
-        // Split full name if FUB put everything in firstName with empty lastName
-        let firstName: string = (person.firstName || '').trim()
-        let lastName: string  = (person.lastName  || '').trim()
-        if (firstName && !lastName && firstName.includes(' ')) {
-          const spaceIdx = firstName.indexOf(' ')
-          lastName  = firstName.slice(spaceIdx + 1).trim()
-          firstName = firstName.slice(0, spaceIdx).trim()
-        }
-        const name = `${firstName} ${lastName}`.trim()
-
-        if (!phones.length) {
-          skipped.push({ contact_id: id, name, reason: 'no phone number' })
-          continue
-        }
-
-        // Skip contacts already in DB
-        const existing = await db.query(
-          'SELECT id FROM contacts WHERE client_id = $1 AND id = $2',
-          [client_id, id],
-        )
-        if (existing.rows.length > 0) {
-          skipped.push({ contact_id: id, name, reason: 'already imported' })
-          continue
-        }
-
-        // If we split the name, write the corrected fields back to FUB
-        if (lastName && lastName !== (person.lastName || '').trim()) {
-          axios.put(`${fubBase}/people/${id}`, { firstName, lastName }, { auth }).catch(() => {})
-        }
-
-        const payload = {
-          contact_id:            id,
-          phone_number:          phones[0],
-          phone_numbers:         phones.length > 1 ? phones : undefined,
-          first_name:            firstName,
-          last_name:             lastName || undefined,
-          email:                 person.emails?.[0]?.value,
-          client_id,
-          assigned_to:           person.assignedTo || undefined,
-          crm_last_contacted_at: person.lastContacted || undefined,
-        }
-
-        triggered.push({ contact_id: id, name, phone: phones[0] })
-
-        if (!dry_run) {
-          handleCrmWebhook(payload, 'followupboss').catch((err) => {
-            logger.error('bulk-import workflow error', { error: err.message, contact_id: id })
-          })
-          if (batchDelayMs > 0) await new Promise(r => setTimeout(r, batchDelayMs))
-        }
+        if (done || !nextUrl) break
       }
-
-      if (!nextUrl) break  // reached end of FUB contacts
     }
 
     res.json({
