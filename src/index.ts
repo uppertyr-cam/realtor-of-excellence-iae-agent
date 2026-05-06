@@ -834,7 +834,7 @@ app.post('/admin/daily-import-preview', requireAdminSecret, async (req, res) => 
       while (true) {
         const r: any = nextUrl
           ? await axios.get(nextUrl, { auth })
-          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted', stage, source } })
+          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: '-lastActivity', stage, source } })
         const page: any[] = r.data?.people || []
         nextUrl = r.data?._metadata?.nextLink || null
 
@@ -961,7 +961,7 @@ app.post('/admin/bulk-import', requireAdminSecret, async (req, res) => {
       while (true) {
         const r: any = nextUrl
           ? await axios.get(nextUrl, { auth })
-          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: 'lastContacted', stage, source } })
+          : await axios.get(`${fubBase}/people`, { auth, params: { limit: PAGE, sort: '-lastActivity', stage, source } })
         const page: any[] = r.data?.people || []
         totalFetched += page.length
         nextUrl = r.data?._metadata?.nextLink || null
