@@ -420,9 +420,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
       }
     }
 
+    const phoneLast9 = phone.replace(/\D/g, '').slice(-9)
     const contactRes = await db.query(
-      `SELECT * FROM contacts WHERE phone_number LIKE $1 LIMIT 1`,
-      [`%${phone.replace(/^\+/, '')}%`]
+      `SELECT * FROM contacts WHERE regexp_replace(phone_number, '[^0-9]', '', 'g') LIKE $1 LIMIT 1`,
+      [`%${phoneLast9}`]
     )
 
     if (contactRes.rowCount === 0) {
@@ -526,9 +527,10 @@ app.post('/webhook/sms', async (req, res) => {
 
     // Look up contact
     const { db } = await import('./db/client')
+    const fromLast9 = from.replace(/\D/g, '').slice(-9)
     const contactRes = await db.query(
-      `SELECT id FROM contacts WHERE phone_number LIKE $1 LIMIT 1`,
-      [`%${from.replace(/\D/g, '')}%`]
+      `SELECT id FROM contacts WHERE regexp_replace(phone_number, '[^0-9]', '', 'g') LIKE $1 LIMIT 1`,
+      [`%${fromLast9}`]
     )
 
     if (contactRes.rowCount === 0) {
