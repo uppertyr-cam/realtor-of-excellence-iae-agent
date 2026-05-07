@@ -348,25 +348,25 @@ app.post('/webhook/whatsapp', async (req, res) => {
             `UPDATE message_log SET delivery_status=$1 WHERE wa_message_id=$2`,
             [deliveryStatus, waMessageId]
           ).catch(() => {})
+          statusDb.query(
+            `UPDATE contacts SET
+               last_delivery_status=$1,
+               last_read_at=CASE WHEN $1='read' THEN NOW() ELSE last_read_at END,
+               updated_at=NOW()
+             WHERE id = (SELECT contact_id FROM message_log WHERE wa_message_id=$2 LIMIT 1)
+             RETURNING id, client_id`,
+            [deliveryStatus, waMessageId]
+          ).then((result) => {
+            for (const row of result.rows) {
+              publishInboxEvent({
+                type: 'status_updated',
+                contactId: row.id,
+                clientId: row.client_id,
+                timestamp: new Date().toISOString(),
+              })
+            }
+          }).catch(() => {})
         }
-        statusDb.query(
-          `UPDATE contacts SET
-             last_delivery_status=$1,
-             last_read_at=CASE WHEN $1='read' THEN NOW() ELSE last_read_at END,
-             updated_at=NOW()
-           WHERE phone_number LIKE $2
-           RETURNING id, client_id`,
-          [deliveryStatus, `%${recipientPhone}%`]
-        ).then((result) => {
-          for (const row of result.rows) {
-            publishInboxEvent({
-              type: 'status_updated',
-              contactId: row.id,
-              clientId: row.client_id,
-              timestamp: new Date().toISOString(),
-            })
-          }
-        }).catch(() => {})
       }
       return
     }
